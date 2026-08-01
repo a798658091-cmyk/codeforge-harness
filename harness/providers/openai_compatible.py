@@ -1,3 +1,9 @@
+"""把 OpenAI-compatible Chat Completions 响应适配为统一 Provider 协议。
+
+任务流位置：位于 Agent Loop 与 OpenAI/DeepSeek API 之间，负责发送消息和工具
+schema，并把厂商响应、工具参数及 Token 用量转换为 AssistantTurn。
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +13,7 @@ from harness.providers.base import AssistantTurn, ModelProvider, ToolCall
 
 
 class OpenAICompatibleProvider(ModelProvider):
-    """OpenAI chat-completions adapter, also usable with DeepSeek."""
+    """兼容 OpenAI Chat Completions 与 DeepSeek 的模型适配器。"""
 
     def __init__(
         self,
@@ -19,6 +25,8 @@ class OpenAICompatibleProvider(ModelProvider):
         max_tokens: int = 4096,
         client: Any | None = None,
     ) -> None:
+        """配置模型客户端，或接收外部注入的兼容客户端。"""
+
         if not model:
             raise ValueError("model is required")
         if not api_key and client is None:
@@ -40,6 +48,8 @@ class OpenAICompatibleProvider(ModelProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> AssistantTurn:
+        """请求 Chat Completions API 并标准化文本、工具调用和用量。"""
+
         request: dict[str, Any] = {
             "model": self.model,
             "messages": messages,

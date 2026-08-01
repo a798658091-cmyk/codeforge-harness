@@ -1,3 +1,9 @@
+"""验证 Day 1 七种默认工具的成功路径和关键失败保护。
+
+任务流位置：绕过模型层，直接从 Tool Registry 分发到文件、搜索、Patch、Shell
+和 pytest 工具，检查具体 workspace 操作及结构化执行结果。
+"""
+
 from __future__ import annotations
 
 import sys
@@ -10,6 +16,8 @@ def test_file_tools_cover_create_read_and_exact_edit(
     registry: ToolRegistry,
     workspace: Path,
 ) -> None:
+    """验证文件工具可以依次创建、按行读取并精确修改文本。"""
+
     created = registry.dispatch(
         "write_file",
         {"path": "notes/todo.txt", "content": "first\nsecond\n"},
@@ -36,6 +44,8 @@ def test_file_tools_cover_create_read_and_exact_edit(
 
 
 def test_write_file_refuses_overwrite(registry: ToolRegistry) -> None:
+    """验证 write_file 不会覆盖 workspace 中的已有文件。"""
+
     result = registry.dispatch(
         "write_file",
         {"path": "src/sample.py", "content": "destroyed"},
@@ -48,6 +58,8 @@ def test_write_file_refuses_overwrite(registry: ToolRegistry) -> None:
 def test_search_finds_matching_source_lines(
     registry: ToolRegistry,
 ) -> None:
+    """验证 search 能按范围、Glob 和大小写规则返回源码行。"""
+
     result = registry.dispatch(
         "search",
         {
@@ -66,6 +78,8 @@ def test_apply_patch_validates_all_changes_before_writing(
     registry: ToolRegistry,
     workspace: Path,
 ) -> None:
+    """验证 apply_patch 在任一变更无效时不会写入其他变更。"""
+
     result = registry.dispatch(
         "apply_patch",
         {
@@ -93,6 +107,8 @@ def test_apply_patch_adds_and_updates_multiple_files(
     registry: ToolRegistry,
     workspace: Path,
 ) -> None:
+    """验证 apply_patch 能在一次调用中新增并更新多个文件。"""
+
     result = registry.dispatch(
         "apply_patch",
         {
@@ -122,6 +138,8 @@ def test_apply_patch_adds_and_updates_multiple_files(
 def test_shell_runs_in_workspace_and_blocks_hard_deny(
     registry: ToolRegistry,
 ) -> None:
+    """验证 Shell 正常执行命令，同时拒绝 hard-deny 危险命令。"""
+
     command = f'"{sys.executable}" -c "print(6 * 7)"'
     allowed = registry.dispatch("shell", {"command": command})
     denied = registry.dispatch(
@@ -139,6 +157,8 @@ def test_run_tests_tool_executes_pytest(
     registry: ToolRegistry,
     workspace: Path,
 ) -> None:
+    """验证 run_tests 能在临时 workspace 内运行真实 pytest。"""
+
     sample = workspace / "sample_test.py"
     sample.write_text(
         "def test_sample():\n"

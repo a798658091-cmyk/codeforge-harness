@@ -1,3 +1,9 @@
+"""实现 workspace 内递归文本搜索和文件过滤。
+
+任务流位置：模型发出 search 调用后由 Tool Registry 分发到这里；本模块逐个
+校验候选路径并生成“文件:行号:内容”结果，随后由 Agent Loop 回灌模型。
+"""
+
 from __future__ import annotations
 
 import fnmatch
@@ -16,6 +22,8 @@ from harness.tools.base import (
 
 
 class SearchArguments(ToolArguments):
+    """定义搜索词、搜索范围、Glob、大小写和结果数量参数。"""
+
     query: str = Field(min_length=1)
     path: str = "."
     glob: str = "*"
@@ -24,6 +32,8 @@ class SearchArguments(ToolArguments):
 
 
 class SearchTool(BaseTool):
+    """递归搜索 workspace 内符合过滤条件的 UTF-8 文本文件。"""
+
     name: ClassVar[str] = "search"
     description: ClassVar[str] = (
         "Search text recursively inside workspace files."
@@ -36,6 +46,8 @@ class SearchTool(BaseTool):
         arguments: SearchArguments,
         context: ToolContext,
     ) -> str:
+        """遍历安全候选文件并返回包含路径和行号的匹配项。"""
+
         root = context.workspace.resolve(arguments.path, must_exist=True)
         candidates = [root] if root.is_file() else root.rglob("*")
         needle = (
@@ -76,6 +88,8 @@ class SearchTool(BaseTool):
 
     @staticmethod
     def _glob_matches(relative: str, path: Path, pattern: str) -> bool:
+        """判断相对路径或文件名是否匹配指定 Glob 模式。"""
+
         if not pattern:
             raise ToolError("glob cannot be empty")
         return fnmatch.fnmatch(relative, pattern) or fnmatch.fnmatch(

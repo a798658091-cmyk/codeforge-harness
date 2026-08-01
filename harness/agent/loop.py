@@ -1,3 +1,9 @@
+"""实现不依赖图编排框架的原生 Agent Loop。
+
+任务流位置：CLI 完成组件装配后进入这里；本模块反复调用 Provider 获取模型
+回合，把工具调用交给 Tool Registry，再将工具结果写回状态并发送给下一轮模型。
+"""
+
 from __future__ import annotations
 
 import json
@@ -10,17 +16,21 @@ from harness.tools.registry import ToolRegistry
 
 
 class AgentLoopLimitError(RuntimeError):
+    """Agent 执行轮数超过配置上限时抛出的异常。"""
+
     pass
 
 
 @dataclass(frozen=True)
 class AgentRunResult:
+    """封装 Agent 的最终回答及完整运行状态。"""
+
     answer: str
     state: AgentState
 
 
 class AgentLoop:
-    """A native model -> tool -> result loop with no graph framework."""
+    """不依赖图框架的“模型 → 工具 → 结果”原生执行循环。"""
 
     def __init__(
         self,
@@ -30,6 +40,8 @@ class AgentLoop:
         system_prompt: str,
         max_steps: int = 20,
     ) -> None:
+        """注入 Provider、工具注册表、系统提示词和步数限制。"""
+
         if max_steps < 1:
             raise ValueError("max_steps must be at least 1")
         self.provider = provider
@@ -43,6 +55,8 @@ class AgentLoop:
         *,
         history: list[dict[str, Any]] | None = None,
     ) -> AgentRunResult:
+        """执行模型与工具的多轮闭环，直到得到最终文本或达到上限。"""
+
         state = AgentState(messages=list(history or []))
         if not state.messages or state.messages[0].get("role") != "system":
             state.messages.insert(
@@ -99,6 +113,8 @@ class AgentLoop:
         state: AgentState,
         turn: AssistantTurn,
     ) -> None:
+        """把标准化模型回合转换为 assistant 消息并写入状态。"""
+
         message: dict[str, Any] = {
             "role": "assistant",
             "content": turn.content,

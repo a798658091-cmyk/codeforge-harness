@@ -24,8 +24,17 @@ Day 1 已完成：
 - 工作区路径约束和基础危险命令 hard-deny。
 - reducer、工具与 Mock LLM 集成测试。
 
-权限审批、Hooks、审计、SQLite 恢复、上下文压缩、Subagent、后台任务、
-Worktree 和真实 MCP 将按后续里程碑接入，不会提前放置没有调用路径的实现。
+Day 2 已完成：
+
+- workspace 路径沙箱覆盖父目录、绝对路径、符号链接和 Shell cwd 逃逸。
+- 支持精确工具名和 Glob 规则的 `allow`、`ask`、`deny` 权限决策。
+- `ask` 通过 CLI 展示工具参数并等待人工确认；无审批函数时 fail-closed。
+- PreToolUse Hook 可阻止执行，PostToolUse Hook 可观察结果且错误相互隔离。
+- 工具成功、参数错误、权限拒绝和 Hook 结果统一写入脱敏 JSONL 审计日志。
+- 安全策略、Hooks、审计、Agent 错误回灌和路径逃逸测试。
+
+SQLite 恢复、上下文压缩、Subagent、后台任务、Worktree 和真实 MCP 属于可选的
+后续里程碑，不会提前放置没有调用路径的实现。
 
 ## 核心闭环
 
@@ -44,7 +53,13 @@ ModelProvider.complete(messages, tool schemas)
             |
       Pydantic validation
             |
+      allow / ask / deny
+            |
+      PreToolUse Hooks
+            |
       Workspace-bound tool
+            |
+      PostToolUse Hooks + JSONL audit
             |
             v
       tool result -> messages -> next model turn
@@ -70,9 +85,13 @@ Copy-Item .env.example .env
 在 `.env` 中配置模型，不要提交真实 Key：
 
 ```dotenv
-CODEFORGE_MODEL=deepseek-chat
+CODEFORGE_MODEL=deepseek-v4-pro
 CODEFORGE_API_KEY=your-api-key
 CODEFORGE_BASE_URL=https://api.deepseek.com
+
+CODEFORGE_PERMISSION_DEFAULT=ask
+CODEFORGE_PERMISSION_RULES=read_file=allow,search=allow
+CODEFORGE_AUDIT_LOG=.codeforge/audit.jsonl
 ```
 
 查看已注册工具：
@@ -89,9 +108,23 @@ CODEFORGE_BASE_URL=https://api.deepseek.com
   "阅读代码并修复失败的测试"
 ```
 
+临时覆盖权限规则或关闭审计：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --permission shell=deny `
+  --permission run_tests=allow `
+  --no-audit `
+  "阅读代码并运行测试"
+```
+
+CLI 默认 `permission-default=ask`，同时允许 `read_file` 和 `search`。未命中只读
+规则的写入、Shell 和测试工具会在执行前询问。审计默认写入 workspace 内的
+`.codeforge/audit.jsonl`，该目录已被 `.gitignore` 忽略。
+
 ## 测试
 
-运行 Day 1 全部测试：
+运行 Day 1 + Day 2 全部离线测试：
 
 ```powershell
 .\.venv\Scripts\python -m pytest -q -p no:cacheprovider
@@ -104,8 +137,56 @@ CODEFORGE_BASE_URL=https://api.deepseek.com
   -p no:cacheprovider
 ```
 
+查看全部测试的开始、临时 workspace、执行结果和 teardown：
+
+```powershell
+.\scripts\test_all_verbose.ps1
+```
+
+保留的核心详细入口（不包含独立的 Hooks/Audit 测试文件）：
+
+```powershell
+.\scripts\test_day1_verbose.ps1
+```
+
+只运行 Day 2 安全测试：
+
+```powershell
+.\.venv\Scripts\python -m pytest `
+  tests\test_permissions.py `
+  tests\test_hooks.py `
+  tests\test_audit.py `
+  tests\test_workspace.py `
+  tests\test_agent_loop.py `
+  -vv -s --show-test-process -p no:cacheprovider
+```
+
+使用当前进程或系统中已经设置的环境变量，额外执行一次真实 Provider 请求：
+
+```powershell
+.\scripts\test_day1_verbose.ps1 -LiveProvider
+```
+
+真实测试读取 `CODEFORGE_API_KEY` / `DEEPSEEK_API_KEY`，模型和地址默认采用
+`deepseek-v4-pro` 与 `https://api.deepseek.com`；已有的 `CODEFORGE_MODEL` 和
+`CODEFORGE_BASE_URL` 可以覆盖默认值。测试不会创建配置文件，也不会打印 API
+Key。该模式会访问外部 API 并产生少量模型费用；不带 `-LiveProvider` 时仍然只
+运行离线测试。
+
+也可以直接使用 pytest 的详细模式：
+
+```powershell
+.\.venv\Scripts\python -m pytest -vv -ra --tb=short `
+  --show-test-process -p no:cacheprovider
+```
+
 测试不需要 API Key。Mock Provider 会先返回工具调用，再根据工具结果返回最终
-答案，用来验证真实的“模型—工具—结果—模型”闭环。
+答案，用来验证真实的“模型—工具—结果—模型”闭环。Provider 单元测试注入的
+也是本地假客户端，不会发出真实网络请求或消耗模型额度。
+
+pytest 进程从项目根目录启动；文件、Shell、Patch 和 `run_tests` 等工具测试使用
+pytest 为各测试创建的独立临时 workspace。详细模式会打印每个临时目录的绝对
+路径，测试结束后 pytest 负责清理这些目录。
 
 ## 安全说明
 
@@ -114,7 +195,13 @@ CODEFORGE_BASE_URL=https://api.deepseek.com
 - `edit_file` 使用精确文本匹配，默认拒绝多处歧义替换。
 - `apply_patch` 先校验全部变更，再写入；写入异常时回滚已修改文件。
 - Shell 子进程不会继承名称含 Key、Token、Secret、Password 的环境变量。
-- 灾难性命令当前直接拒绝；完整 allow/ask/deny 审批属于 Day 2。
+- CLI 默认允许读取和搜索，其余工具进入 `ask` 人工审批。
+- `deny` 和未获批准的 `ask` 在 PreToolUse 与工具执行前停止调用。
+- PreToolUse 异常采用 fail-closed；PostToolUse 异常不伪造已发生的工具结果。
+- JSONL 审计记录权限、参数、结果、耗时和 Hook 错误，并脱敏常见凭据。
+- 审计路径自身也必须位于 workspace 内。
+- Shell 的 cwd 受路径沙箱约束，但 Day 2 尚不是操作系统级进程沙箱；命令文本
+  内主动引用的外部绝对路径仍需通过权限审批和 hard-deny 控制。
 
 ## 面试讲解要点
 

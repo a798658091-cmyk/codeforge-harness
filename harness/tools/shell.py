@@ -1,3 +1,9 @@
+"""实现受 workspace、超时、环境变量过滤和 hard-deny 约束的 Shell 工具。
+
+任务流位置：模型的 shell 调用经 Tool Registry 分发到这里；命令通过安全检查后
+在 workspace 子目录执行，stdout、stderr 和退出码再返回 Agent Loop。
+"""
+
 from __future__ import annotations
 
 import os
@@ -16,12 +22,16 @@ from harness.tools.base import (
 
 
 class ShellArguments(ToolArguments):
+    """定义 Shell 命令、工作目录和超时时间参数。"""
+
     command: str = Field(min_length=1, max_length=10000)
     cwd: str = "."
     timeout_seconds: int = Field(default=60, ge=1, le=120)
 
 
 class ShellTool(BaseTool):
+    """在 workspace 工作目录内执行带基础安全保护的通用命令。"""
+
     name: ClassVar[str] = "shell"
     description: ClassVar[str] = (
         "Run a shell command inside the workspace. "
@@ -43,6 +53,8 @@ class ShellTool(BaseTool):
         arguments: ShellArguments,
         context: ToolContext,
     ) -> ToolOutput:
+        """检查命令和 cwd，过滤敏感环境变量并返回子进程输出。"""
+
         normalized = " ".join(arguments.command.lower().split())
         for pattern in self.hard_deny:
             if pattern in normalized:

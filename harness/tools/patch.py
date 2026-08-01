@@ -1,3 +1,9 @@
+"""实现经过整体预校验、支持失败回滚的结构化多文件 Patch 工具。
+
+任务流位置：Tool Registry 校验顶层参数后进入这里；本模块先准备全部变更，
+再集中写入 workspace，最后把变更摘要交回 Agent Loop。
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,6 +21,8 @@ from harness.tools.base import (
 
 
 class PatchChange(ToolArguments):
+    """描述单个文件新增或精确更新操作。"""
+
     operation: Literal["add", "update"]
     path: str = Field(min_length=1)
     content: str | None = None
@@ -24,6 +32,8 @@ class PatchChange(ToolArguments):
 
     @model_validator(mode="after")
     def validate_operation(self) -> "PatchChange":
+        """检查不同 Patch 操作是否提供了各自必需的字段。"""
+
         if self.operation == "add" and self.content is None:
             raise ValueError("add requires content")
         if self.operation == "update":
@@ -35,11 +45,15 @@ class PatchChange(ToolArguments):
 
 
 class ApplyPatchArguments(ToolArguments):
+    """定义一次 apply_patch 所包含的有序变更集合。"""
+
     changes: list[PatchChange] = Field(min_length=1, max_length=50)
 
 
 @dataclass
 class _PreparedChange:
+    """保存写入前已计算好的目标内容和回滚所需原始状态。"""
+
     path: Path
     existed: bool
     original: str | None
@@ -47,6 +61,8 @@ class _PreparedChange:
 
 
 class ApplyPatchTool(BaseTool):
+    """以先整体校验、后集中写入的方式执行多文件变更。"""
+
     name: ClassVar[str] = "apply_patch"
     description: ClassVar[str] = (
         "Atomically add or update one or more workspace files using "
@@ -59,6 +75,8 @@ class ApplyPatchTool(BaseTool):
         arguments: ApplyPatchArguments,
         context: ToolContext,
     ) -> str:
+        """准备全部变更，执行写入，并在异常时回滚已写目标。"""
+
         prepared: list[_PreparedChange] = []
         seen: set[Path] = set()
         for change in arguments.changes:

@@ -1,3 +1,9 @@
+"""提供可脚本化、可重复执行的离线 Mock 模型实现。
+
+任务流位置：测试时替代真实 Provider 接入 Agent Loop，按照预设响应生成工具调用
+和最终答案，从而验证“模型 → 工具 → 结果 → 模型”闭环而不访问网络。
+"""
+
 from __future__ import annotations
 
 from collections import deque
@@ -14,13 +20,15 @@ MockResponder = Callable[
 
 
 class MockProvider(ModelProvider):
-    """Deterministic provider for integration tests and offline demos."""
+    """供集成测试和离线演示使用的确定性 Provider。"""
 
     def __init__(
         self,
         responses: Iterable[AssistantTurn] | None = None,
         responder: MockResponder | None = None,
     ) -> None:
+        """使用固定响应序列或动态响应函数初始化 Mock Provider。"""
+
         if responses is None and responder is None:
             raise ValueError("responses or responder is required")
         self._responses = deque(responses or [])
@@ -32,6 +40,8 @@ class MockProvider(ModelProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> AssistantTurn:
+        """记录请求并返回下一条预设或动态生成的模型回合。"""
+
         call_index = len(self.requests)
         self.requests.append(
             {"messages": deepcopy(messages), "tools": deepcopy(tools)}

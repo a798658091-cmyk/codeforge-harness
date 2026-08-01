@@ -1,3 +1,9 @@
+"""使用假 OpenAI 客户端验证真实 Provider 适配器的响应标准化逻辑。
+
+任务流位置：隔离外部网络，只测试“厂商响应 → OpenAICompatibleProvider →
+AssistantTurn/ToolCall”的转换，是 Agent Loop 上游协议的单元测试。
+"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -6,10 +12,16 @@ from harness.providers.openai_compatible import OpenAICompatibleProvider
 
 
 class FakeCompletions:
+    """模拟 OpenAI SDK 的 chat.completions 资源。"""
+
     def __init__(self) -> None:
+        """初始化用于保存最后一次请求参数的槽位。"""
+
         self.request = None
 
     def create(self, **kwargs):
+        """保存请求并返回包含工具调用和用量的假响应。"""
+
         self.request = kwargs
         tool_call = SimpleNamespace(
             id="call-7",
@@ -32,6 +44,8 @@ class FakeCompletions:
 
 
 def test_openai_compatible_provider_normalizes_response() -> None:
+    """验证适配器正确转换工具调用、用量并设置请求参数。"""
+
     completions = FakeCompletions()
     client = SimpleNamespace(
         chat=SimpleNamespace(completions=completions)
