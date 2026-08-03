@@ -1,4 +1,4 @@
-"""提供 CodeForge 命令行、安全、会话、Memory、委派和后台任务装配。
+"""提供 CodeForge CLI、安全、会话、Memory、MCP、委派和后台任务装配。
 
 任务流位置：承接 ``python -m harness`` 入口，读取配置并创建 Provider、默认
 Tool Registry、安全策略、SQLite 检查点、上下文管理和 Agent Loop，最后启动
@@ -16,9 +16,17 @@ from harness.agent.loop import AgentLoop, AgentLoopLimitError
 from harness.agent.prompt import build_system_prompt
 from harness.config import ConfigurationError, Settings
 from harness.context.compaction import ContextCompactor
-from harness.context.memory import MemoryStore
+from harness.context.memory import (
+    MemoryStore,
+    extract_explicit_memory_intents,
+)
 from harness.context.skills import SkillRegistry
 from harness.delegation.subagent import ReadonlySubagentRunner
+from harness.mcp_stdio import (
+    MCPError,
+    StdioMCPManager,
+    load_mcp_config,
+)
 from harness.providers.openai_compatible import OpenAICompatibleProvider
 from harness.safety.audit import AuditLogger
 from harness.safety.permissions import PermissionPolicy, PermissionRequest
@@ -27,6 +35,7 @@ from harness.tasks.background import BackgroundJobManager
 from harness.tasks.notifications import NotificationCenter
 from harness.tasks.todo import TodoList
 from harness.tools import build_default_registry
+from harness.tools.registry import ToolRegistry
 
 
 def _approve_tool_call(request: PermissionRequest) -> bool:
@@ -46,6 +55,16 @@ def _approve_tool_call(request: PermissionRequest) -> bool:
     )
     answer = input("Allow this tool call? [y/N] ").strip().lower()
     return answer in {"y", "yes"}
+
+
+def _auto_approve_tool_call(request: PermissionRequest) -> bool:
+    """在 --yes 模式下自动同意 ask 请求，并保留可见的审批提示。"""
+
+    print(
+        f"[permission:auto-approved] tool={request.tool_name}",
+        file=sys.stderr,
+    )
+    return True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -75,6 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="TOOL=DECISION",
         help="override one tool or glob rule; may be repeated",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help=(
+            "automatically approve ask decisions; deny rules, hooks, "
+            "hard-deny checks, and workspace sandboxing still apply"
+        ),
     )
     parser.add_argument(
         "--audit-log",
@@ -141,6 +169,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="default maximum steps for the read-only subagent",
     )
     parser.add_argument(
+        "--mcp-config",
+        help=(
+            "workspace-relative JSON config for explicitly trusted stdio "
+            "MCP servers"
+        ),
+    )
+    parser.add_argument(
         "--list-tools",
         action="store_true",
         help="show registered tools and exit",
@@ -154,10 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     workspace = Path(args.workspace).expanduser().resolve()
     if args.list_tools:
-        registry = build_default_registry(workspace)
-        for name in registry.names():
-            print(name)
-        return 0
+        return _list_registered_tools(workspace, args.mcp_config)
 
     prompt = " ".join(args.prompt).strip()
     if not prompt:
@@ -168,6 +200,8 @@ def main(argv: list[str] | None = None) -> int:
 
     background_manager: BackgroundJobManager | None = None
     notification_center: NotificationCenter | None = None
+    mcp_manager: StdioMCPManager | None = None
+    captured_memory_keys: list[str] = []
     try:
         settings = Settings.from_env(
             workspace=workspace,
@@ -223,11 +257,6 @@ def main(argv: list[str] | None = None) -> int:
             if settings.memory_db is not None
             else None
         )
-        memory_context = (
-            memory_store.render_relevant(prompt)
-            if memory_store is not None
-            else ""
-        )
         selected_skills = [
             *args.skill,
             *skill_registry.explicit_mentions(prompt),
@@ -262,10 +291,19 @@ def main(argv: list[str] | None = None) -> int:
             audit_logger=audit_logger,
             default_max_steps=settings.subagent_max_steps,
         )
+        mcp_tools = []
+        if args.mcp_config:
+            mcp_manager = StdioMCPManager(
+                load_mcp_config(args.mcp_config, settings.workspace),
+                settings.workspace,
+            )
+            mcp_tools = mcp_manager.start_and_discover()
         registry = build_default_registry(
             workspace,
             permission_policy=permission_policy,
-            approval_handler=_approve_tool_call,
+            approval_handler=(
+                _auto_approve_tool_call if args.yes else _approve_tool_call
+            ),
             audit_logger=audit_logger,
             todo_list=todo_list,
             skill_registry=skill_registry,
@@ -273,6 +311,20 @@ def main(argv: list[str] | None = None) -> int:
             subagent_runner=subagent_runner,
             background_manager=background_manager,
             notification_center=notification_center,
+        )
+        for mcp_tool in mcp_tools:
+            registry.register(mcp_tool)
+        memory_capture_status, captured_memory_keys = (
+            _capture_explicit_memories(
+                prompt,
+                registry,
+                enabled=memory_store is not None,
+            )
+        )
+        memory_context = (
+            memory_store.render_relevant(prompt)
+            if memory_store is not None
+            else ""
         )
         loop = AgentLoop(
             provider=provider,
@@ -282,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
                 skill_catalog=skill_registry.catalog(),
                 active_skills=active_skills,
                 memory_context=memory_context,
+                memory_capture_status=memory_capture_status,
             ),
             max_steps=args.max_steps,
             compactor=(
@@ -310,29 +363,40 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             # Provider 或模型循环出现未预料异常时也不能遗留后台进程。
             _shutdown_background(background_manager)
+            _shutdown_mcp(mcp_manager)
     except (
         ConfigurationError,
         KeyError,
         SessionNotFoundError,
         ValueError,
         FileNotFoundError,
+        MCPError,
     ) as exc:
         _shutdown_background(background_manager)
+        _shutdown_mcp(mcp_manager)
         _print_notifications(notification_center)
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
     except AgentLoopLimitError as exc:
         _shutdown_background(background_manager)
+        _shutdown_mcp(mcp_manager)
         _print_notifications(notification_center)
         print(f"agent stopped: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         _shutdown_background(background_manager)
+        _shutdown_mcp(mcp_manager)
         _print_notifications(notification_center)
         print("\ninterrupted", file=sys.stderr)
         return 130
+    except Exception:
+        # 未知缺陷仍向上暴露，但必须先清理当前进程拥有的所有子进程。
+        _shutdown_background(background_manager)
+        _shutdown_mcp(mcp_manager)
+        raise
 
     _shutdown_background(background_manager)
+    _shutdown_mcp(mcp_manager)
     print(result.answer)
     print(
         f"\n[steps={result.state.steps}, "
@@ -347,6 +411,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[todos={len(result.state.todos)}]")
     if result.state.compactions:
         print(f"[compactions={result.state.compactions}]")
+    if captured_memory_keys:
+        print(f"[memory-saved={', '.join(captured_memory_keys)}]")
+    _print_background_jobs(background_manager)
     _print_notifications(notification_center)
     return 0
 
@@ -360,6 +427,36 @@ def _shutdown_background(
         manager.shutdown(cancel_running=True)
 
 
+def _shutdown_mcp(manager: StdioMCPManager | None) -> None:
+    """在所有 CLI 退出路径关闭已启动的 stdio MCP Server。"""
+
+    if manager is not None:
+        manager.close()
+
+
+def _list_registered_tools(workspace: Path, mcp_config: str | None) -> int:
+    """列出本地和可选 MCP 工具，并确保临时 Server 正常关闭。"""
+
+    manager: StdioMCPManager | None = None
+    try:
+        registry = build_default_registry(workspace)
+        if mcp_config:
+            manager = StdioMCPManager(
+                load_mcp_config(mcp_config, workspace),
+                workspace,
+            )
+            for tool in manager.start_and_discover():
+                registry.register(tool)
+        for name in registry.names():
+            print(name)
+        return 0
+    except MCPError as exc:
+        print(f"MCP configuration error: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        _shutdown_mcp(manager)
+
+
 def _print_notifications(center: NotificationCenter | None) -> None:
     """把退出时仍未读取的运行时通知输出到终端。"""
 
@@ -369,6 +466,59 @@ def _print_notifications(center: NotificationCenter | None) -> None:
         print(
             f"[notification:{notification.level}] "
             f"{notification.title}: {notification.message}"
+        )
+
+
+def _capture_explicit_memories(
+    prompt: str,
+    registry: ToolRegistry,
+    *,
+    enabled: bool,
+) -> tuple[str, list[str]]:
+    """通过完整工具安全链持久化用户明确要求记住的内容。"""
+
+    intents = extract_explicit_memory_intents(prompt)
+    if not intents:
+        return "", []
+    if not enabled:
+        return "- Memory is disabled; explicit requests were not saved.", []
+
+    status_lines: list[str] = []
+    saved_keys: list[str] = []
+    for intent in intents:
+        result = registry.dispatch(
+            "memory_write",
+            {
+                "key": intent.key,
+                "content": intent.content,
+                "tags": list(intent.tags),
+            },
+        )
+        if result.success:
+            saved_keys.append(intent.key)
+            status_lines.append(f'- Saved memory "{intent.key}".')
+        else:
+            status_lines.append(
+                f'- Failed to save memory "{intent.key}": '
+                f"{result.error_type or 'unknown_error'}."
+            )
+    return "\n".join(status_lines), saved_keys
+
+
+def _print_background_jobs(manager: BackgroundJobManager | None) -> None:
+    """在任务结束时直接展示后台作业终态，避免用户手工翻找日志。"""
+
+    if manager is None:
+        return
+    jobs = manager.list()
+    if not jobs:
+        return
+    print("[background-jobs]")
+    for job in jobs:
+        relative_log = manager.workspace.relative(job.log_path)
+        print(
+            f"- {job.id}: {job.status.value}, "
+            f"return_code={job.return_code}, log={relative_log}"
         )
 
 

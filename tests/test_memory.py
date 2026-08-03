@@ -15,6 +15,7 @@ from harness import cli
 from harness.context.memory import (
     MemoryStore,
     SensitiveMemoryError,
+    extract_explicit_memory_intents,
 )
 from harness.providers.base import AssistantTurn
 from harness.safety.permissions import PermissionPolicy
@@ -178,3 +179,52 @@ def test_cli_automatically_injects_relevant_memory(
     system_prompt = _MemoryCLIProvider.requests[0][0]["content"]
     assert "format-command" in system_prompt
     assert "ruff format" in system_prompt
+
+
+def test_extracts_only_explicit_memory_intent() -> None:
+    """验证自然语言明确记忆请求会被提取，而否定表达不会误写。"""
+
+    prompt = (
+        "请先分析当前架构。以后讨论这个项目时，请记住我的沟通偏好："
+        "使用中文，先说结论，再解释关键实现，架构按模块划分。"
+    )
+
+    intents = extract_explicit_memory_intents(prompt)
+
+    assert len(intents) == 1
+    assert intents[0].key == "项目沟通偏好"
+    assert "使用中文" in intents[0].content
+    assert extract_explicit_memory_intents("不要记住这段临时内容。") == []
+
+
+def test_cli_guarantees_explicit_memory_capture_before_model_call(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """验证 --yes 自动审批后，明确偏好会在模型调用前持久化。"""
+
+    memory_path = workspace / ".codeforge" / "memory.sqlite3"
+    _MemoryCLIProvider.requests = []
+    monkeypatch.setenv("CODEFORGE_MODEL", "test-model")
+    monkeypatch.setenv("CODEFORGE_API_KEY", "test-key")
+    monkeypatch.setenv("CODEFORGE_PERMISSION_RULES", "memory_write=ask")
+    monkeypatch.setattr(cli, "OpenAICompatibleProvider", _MemoryCLIProvider)
+
+    exit_code = cli.main(
+        [
+            "--workspace",
+            str(workspace),
+            "--no-session",
+            "--yes",
+            "以后讨论项目时，请记住我的沟通偏好：使用中文，先说结论。",
+        ]
+    )
+
+    assert exit_code == 0
+    records = MemoryStore(memory_path).search("项目沟通偏好")
+    assert records[0].key == "项目沟通偏好"
+    assert "使用中文" in records[0].content
+    system_prompt = _MemoryCLIProvider.requests[0][0]["content"]
+    assert 'Saved memory "项目沟通偏好"' in system_prompt
+    assert "[permission:auto-approved] tool=memory_write" in capsys.readouterr().err

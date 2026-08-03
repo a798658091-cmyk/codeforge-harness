@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -38,6 +39,15 @@ class MemoryRecord:
     tags: tuple[str, ...]
     created_at: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class ExplicitMemoryIntent:
+    """表示从用户原话中识别出的明确长期记忆请求。"""
+
+    key: str
+    content: str
+    tags: tuple[str, ...] = ("explicit", "user-requested")
 
 
 class MemoryStore:
@@ -375,6 +385,65 @@ def _reject_sensitive_memory(value: str) -> None:
         )
 
 
+def extract_explicit_memory_intents(prompt: str) -> list[ExplicitMemoryIntent]:
+    """提取用户明确要求“记住”的内容，不推断普通陈述或隐含偏好。
+
+    该函数只识别带有明确动作词的中文和英文表达，例如“请记住……”或
+    “remember that ...”。实际持久化仍由 CLI 通过 Tool Registry 完成，因此
+    权限、Hooks、敏感信息过滤和审计边界不会被绕过。
+    """
+
+    if not prompt.strip():
+        return []
+    patterns = (
+        re.compile(
+            r"(?<!不要)(?<!不用)(?<!无需)"
+            r"(?:请你?记住|(?:^|[\n。！？])\s*记住)"
+            r"\s*[:：]?\s*(?P<content>[^。！？\n]{2,1000})",
+            re.MULTILINE,
+        ),
+        re.compile(
+            r"(?<!do not )(?<!don't )\b(?:please\s+)?remember"
+            r"(?:\s+that)?\s*[:：]?\s*"
+            r"(?P<content>[^.!?\n]{2,1000})",
+            re.IGNORECASE,
+        ),
+    )
+    intents_by_key: dict[str, ExplicitMemoryIntent] = {}
+    for pattern in patterns:
+        for match in pattern.finditer(prompt):
+            content = match.group("content").strip(" \t,，;；:：")
+            if not content:
+                continue
+            key = _derive_explicit_memory_key(content)
+            intents_by_key[key] = ExplicitMemoryIntent(
+                key=key,
+                content=content,
+            )
+    return list(intents_by_key.values())
+
+
+def _derive_explicit_memory_key(content: str) -> str:
+    """从记忆主题生成稳定 key，使同类偏好再次声明时能够更新原记录。"""
+
+    folded = content.casefold()
+    if "沟通偏好" in content or (
+        "偏好" in content and any(word in content for word in ("中文", "回答", "说明"))
+    ):
+        return "项目沟通偏好"
+    if "测试命令" in content or "test command" in folded:
+        return "项目测试命令"
+    if "代码风格" in content or "coding style" in folded:
+        return "项目代码风格"
+
+    topic = re.split(r"[:：]", content, maxsplit=1)[0].strip()
+    topic = re.sub(r"^(?:我的|本项目的?|这个项目的?|that\s+)", "", topic)
+    if 2 <= len(topic) <= 40:
+        return topic[:120]
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
+    return f"explicit-memory-{digest}"
+
+
 def _search_tokens(query: str) -> set[str]:
     """提取英文词和中文双字片段，支持简单跨语言检索。"""
 
@@ -426,10 +495,12 @@ def _utc_now() -> str:
 
 
 __all__ = [
+    "ExplicitMemoryIntent",
     "MemoryDeleteTool",
     "MemoryRecord",
     "MemorySearchTool",
     "MemoryStore",
     "MemoryWriteTool",
     "SensitiveMemoryError",
+    "extract_explicit_memory_intents",
 ]

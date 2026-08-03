@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "workspace": {
+      "command": [
+        "{python}",
+        "mcp_servers/workspace_server.py"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 15,
+      "env": []
+    }
+  }
+}

@@ -15,6 +15,7 @@ def build_system_prompt(
     skill_catalog: str | None = None,
     active_skills: str | None = None,
     memory_context: str | None = None,
+    memory_capture_status: str | None = None,
 ) -> str:
     """生成包含 workspace、Todo、Skills、Memory 和委派要求的提示词。"""
 
@@ -42,4 +43,11 @@ def build_system_prompt(
         prompt += f"\n\nPreloaded skill instructions:\n{active_skills}"
     if memory_context:
         prompt += f"\n\nRelevant verified workspace memories:\n{memory_context}"
+    if memory_capture_status:
+        prompt += (
+            "\n\nHarness handling of explicit memory requests in this turn:\n"
+            f"{memory_capture_status}\n"
+            "Do not duplicate a memory that the harness already saved, and "
+            "do not claim a failed memory capture succeeded."
+        )
     return prompt

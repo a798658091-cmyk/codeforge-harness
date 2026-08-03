@@ -49,12 +49,25 @@ Day 4 精简版已完成：
   搜索、Skills 和 Memory 查询工具；写文件、Shell 和递归委派不在其 schema 中。
 - `memory_write`、`memory_search`、`memory_delete` 使用 workspace 内 SQLite 保存
   跨会话项目知识，并拒绝常见 API Key、Token、密码等敏感内容。
+- 用户明确说“请记住……”时，Harness 会在调用模型前识别记忆意图，并通过
+  Tool Registry 可靠写入；该过程仍经过权限、Hooks、敏感信息检查和审计。
 - `background_start/status/output/cancel` 支持非阻塞 Shell、独立日志、超时、并发
   上限和进程树取消；CLI 退出时不会遗留仍在运行的后台进程。
 - 后台作业成功、失败、超时或取消时进入 NotificationCenter；Agent 可查询、确认，
   CLI 退出前会显示仍未读取的通知。
 
-完整并行/可写 Subagent、Cron、Worktree 和真实 MCP 仍属于可选后续里程碑。
+Day 5 选择性完成：
+
+- 实现真实 stdio MCP 客户端，遵循 MCP `2025-11-25` 生命周期，通过独立子进程
+  完成 `initialize`、`notifications/initialized`、`tools/list` 和 `tools/call`。
+- MCP 工具动态转换为 CodeForge `BaseTool`，继续经过 Pydantic 参数校验、
+  allow/ask/deny、Hooks 和 JSONL 审计。
+- 支持请求超时、JSON-RPC ID 路由、分页工具发现、stderr 独立日志、最小环境变量
+  继承和 CLI 退出清理。
+- 提供一个真实本地 workspace 统计 MCP Server 和可直接运行的配置。
+
+完整并行/可写 Subagent、Cron、Worktree、MessageBus 和 HTTP MCP 仍属于可选后续
+里程碑。
 
 ## 核心闭环
 
@@ -83,7 +96,7 @@ ModelProvider.complete(messages, tool schemas)
             |
       Workspace-bound tool
             |
-      code tools / Todo / Skills / Memory
+      code tools / Todo / Skills / Memory / stdio MCP
       + read-only Subagent / background Shell / notifications
             |
       PostToolUse Hooks + JSONL audit
@@ -144,6 +157,91 @@ CODEFORGE_SUBAGENT_MAX_STEPS=6
   "阅读代码并修复失败的测试"
 ```
 
+### 成品演示方式
+
+日常运行不需要把权限规则、通知查询或日志读取拼进命令。进入项目后直接启动：
+
+```powershell
+.\.venv\Scripts\python -m harness
+```
+
+看到提示后只输入自然任务：
+
+```text
+CodeForge task> 请阅读当前项目，找出配置加载入口并说明调用流程
+```
+
+也可以把任务直接放在同一条命令中：
+
+```powershell
+.\.venv\Scripts\python -m harness "请检查当前改动，运行必要检查并总结结果"
+```
+
+默认安全策略会在写文件、Shell、后台任务等高影响操作前显示一次审批提示；输入
+`y` 即可继续。这是成品运行时的正常安全交互，不需要为每次任务手写
+`--permission`。最终输出会自动包含回答、Session ID、本轮明确保存的 Memory、
+后台作业终态和未读通知；审计与后台日志仍会保留在 `.codeforge` 中供排错使用，
+但正常演示不需要手工读取。
+
+在自己完全信任的本地 workspace 中，可以用 `--yes`（简写 `-y`）自动同意所有
+原本为 `ask` 的请求：
+
+```powershell
+.\.venv\Scripts\python -m harness -y "请记住我的沟通偏好：回答使用中文。"
+```
+
+`--yes` 不会把显式 `deny` 改成允许，也不能绕过 PreToolUse Hook、Shell
+hard-deny 或 workspace 路径沙箱。它适合本地演示，不建议对不可信仓库使用。
+
+### 真实 stdio MCP
+
+MCP Server 不会从仓库中自动启动。只有用户显式传入 workspace 内的配置文件时，
+Harness 才会创建外部进程。先查看本地工具和动态发现的 MCP 工具：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --mcp-config mcp_servers\example_config.json `
+  --list-tools
+```
+
+输出中应出现：
+
+```text
+mcp_workspace_project_stats
+```
+
+使用真实 Provider 调用它：
+
+```powershell
+.\.venv\Scripts\python -m harness -y `
+  --mcp-config mcp_servers\example_config.json `
+  "请统计 harness 目录中 Python 文件数量和总行数"
+```
+
+示例配置使用 `{python}` 表示当前运行 Harness 的 Python 解释器，`{workspace}`
+表示当前 workspace 绝对路径：
+
+```json
+{
+  "servers": {
+    "workspace": {
+      "command": ["{python}", "mcp_servers/workspace_server.py"],
+      "cwd": ".",
+      "timeout_seconds": 15,
+      "env": []
+    }
+  }
+}
+```
+
+Server 暴露的 `project_stats` 会被命名空间化为
+`mcp_workspace_project_stats`，避免和本地工具或其他 Server 冲突。`env` 只列出
+确实需要显式转发给 Server 的环境变量名；默认不会把 Provider API Key 交给
+外部进程。Server 的 stderr 保存在 `.codeforge/mcp/<server>.stderr.log`。
+
+当前范围只实现 tools，不包含 MCP resources、prompts、sampling、HTTP transport
+和工具列表热更新。
+
 临时覆盖权限规则或关闭审计：
 
 ```powershell
@@ -192,7 +290,8 @@ CLI 默认 `permission-default=ask`，同时允许 `read_file` 和 `search`。�
 ```
 
 长期记忆默认保存在 `.codeforge/memory.sqlite3`。每次新任务会按用户提示自动召回
-相关记忆，也可以显式要求模型调用 `memory_search`。保存经过确认的项目约定：
+相关记忆，也可以显式要求模型调用 `memory_search`。用户明确说“请记住”时，
+Harness 会先通过完整工具安全链保存内容，不再依赖模型是否主动调用工具：
 
 ```powershell
 .\.venv\Scripts\python -m harness `
@@ -277,6 +376,14 @@ CLI 默认 `permission-default=ask`，同时允许 `read_file` 和 `search`。�
   -vv -s --show-test-process -p no:cacheprovider
 ```
 
+只运行真实 stdio MCP 子进程集成测试：
+
+```powershell
+.\.venv\Scripts\python -m pytest `
+  tests\test_mcp_stdio.py `
+  -vv -s --show-test-process -p no:cacheprovider
+```
+
 使用当前进程或系统中已经设置的环境变量，额外执行一次真实 Provider 请求：
 
 ```powershell
@@ -321,6 +428,9 @@ pytest 为各测试创建的独立临时 workspace。详细模式会打印每个
 - Memory 数据库路径必须在 workspace 内，疑似凭据的内容会被拒绝持久化。
 - 只读 Subagent 的安全边界由独立工具白名单强制，而不是只依赖提示词。
 - 后台 Shell 复用 cwd 沙箱、敏感环境变量过滤和 hard-deny，CLI 退出时清理进程树。
+- stdio MCP 配置必须由用户显式指定且位于 workspace 内；远端工具调用仍经过权限、
+  Hooks 和审计。MCP Server 本身是外部可执行程序，不受 Python 路径沙箱约束，
+  因此只能加载可信配置；敏感环境变量必须通过配置中的 `env` 显式允许。
 
 ## 面试讲解要点
 
