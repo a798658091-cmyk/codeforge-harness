@@ -8,11 +8,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
 from harness.safety.workspace import Workspace
+
+if TYPE_CHECKING:
+    from harness.tasks.todo import TodoList
 
 
 class ToolArguments(BaseModel):
@@ -32,6 +35,7 @@ class ToolContext:
     """向具体工具传递 workspace 等共享执行依赖。"""
 
     workspace: Workspace
+    todo_list: TodoList | None = None
 
 
 @dataclass(frozen=True)

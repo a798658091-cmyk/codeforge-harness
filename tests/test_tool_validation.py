@@ -47,7 +47,7 @@ def test_registry_returns_unknown_tool_as_data(
 def test_registry_exports_openai_function_schemas(
     registry: ToolRegistry,
 ) -> None:
-    """验证注册表完整导出七种默认工具的 function schemas。"""
+    """验证注册表完整导出代码、安全上下文和计划工具 schemas。"""
 
     schemas = registry.schemas()
     names = [schema["function"]["name"] for schema in schemas]
@@ -60,5 +60,19 @@ def test_registry_exports_openai_function_schemas(
         "apply_patch",
         "shell",
         "run_tests",
+        "todo_read",
+        "todo_write",
+        "list_skills",
+        "read_skill",
+        "memory_search",
+        "memory_write",
+        "memory_delete",
+        "delegate_readonly",
+        "background_start",
+        "background_status",
+        "background_output",
+        "background_cancel",
+        "notification_list",
+        "notification_ack",
     ]
     assert all(schema["type"] == "function" for schema in schemas)

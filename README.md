@@ -33,13 +33,37 @@ Day 2 已完成：
 - 工具成功、参数错误、权限拒绝和 Hook 结果统一写入脱敏 JSONL 审计日志。
 - 安全策略、Hooks、审计、Agent 错误回灌和路径逃逸测试。
 
-SQLite 恢复、上下文压缩、Subagent、后台任务、Worktree 和真实 MCP 属于可选的
-后续里程碑，不会提前放置没有调用路径的实现。
+Day 3 已完成：
+
+- `todo_read` / `todo_write` 让模型维护状态明确、ID 稳定的任务清单。
+- SQLite 为用户消息、模型回合、工具结果、压缩和完成状态追加检查点。
+- CLI 支持 `--resume SESSION_ID` 和 `--resume latest` 恢复同一工作区会话。
+- 上下文超过消息数或字符预算时生成确定性本地摘要，保留近期工具调用链。
+- 扫描 workspace 的 `.codeforge/skills/*/SKILL.md` 与 `skills/*/SKILL.md`，
+  支持工具渐进读取、`--skill NAME` 和 `$name` 显式预加载。
+- Todo、SQLite 恢复、上下文压缩和 Skills 均具有离线集成测试。
+
+Day 4 精简版已完成：
+
+- `delegate_readonly` 创建独立、同步、步数有界的只读 Subagent，只暴露读取、
+  搜索、Skills 和 Memory 查询工具；写文件、Shell 和递归委派不在其 schema 中。
+- `memory_write`、`memory_search`、`memory_delete` 使用 workspace 内 SQLite 保存
+  跨会话项目知识，并拒绝常见 API Key、Token、密码等敏感内容。
+- `background_start/status/output/cancel` 支持非阻塞 Shell、独立日志、超时、并发
+  上限和进程树取消；CLI 退出时不会遗留仍在运行的后台进程。
+- 后台作业成功、失败、超时或取消时进入 NotificationCenter；Agent 可查询、确认，
+  CLI 退出前会显示仍未读取的通知。
+
+完整并行/可写 Subagent、Cron、Worktree 和真实 MCP 仍属于可选后续里程碑。
 
 ## 核心闭环
 
 ```text
 User prompt
+    |
+    +--> create/resume SQLite session
+    v
+Context compaction + Skills + recalled Memory
     |
     v
 ModelProvider.complete(messages, tool schemas)
@@ -59,10 +83,16 @@ ModelProvider.complete(messages, tool schemas)
             |
       Workspace-bound tool
             |
+      code tools / Todo / Skills / Memory
+      + read-only Subagent / background Shell / notifications
+            |
       PostToolUse Hooks + JSONL audit
             |
             v
-      tool result -> messages -> next model turn
+      tool result -> reducer -> SQLite checkpoint
+            |
+            v
+      messages -> next model turn
 ```
 
 Agent Loop 只依赖两个接口：
@@ -92,6 +122,12 @@ CODEFORGE_BASE_URL=https://api.deepseek.com
 CODEFORGE_PERMISSION_DEFAULT=ask
 CODEFORGE_PERMISSION_RULES=read_file=allow,search=allow
 CODEFORGE_AUDIT_LOG=.codeforge/audit.jsonl
+CODEFORGE_SESSION_DB=.codeforge/sessions.sqlite3
+CODEFORGE_CONTEXT_MAX_MESSAGES=40
+CODEFORGE_CONTEXT_KEEP_RECENT=12
+CODEFORGE_CONTEXT_MAX_CHARACTERS=40000
+CODEFORGE_MEMORY_DB=.codeforge/memory.sqlite3
+CODEFORGE_SUBAGENT_MAX_STEPS=6
 ```
 
 查看已注册工具：
@@ -122,9 +158,68 @@ CLI 默认 `permission-default=ask`，同时允许 `read_file` 和 `search`。�
 规则的写入、Shell 和测试工具会在执行前询问。审计默认写入 workspace 内的
 `.codeforge/audit.jsonl`，该目录已被 `.gitignore` 忽略。
 
+每次运行默认创建 SQLite 会话，并在结束时输出会话 ID：
+
+```text
+[session=7bdaf18a...]
+```
+
+使用该 ID 或当前工作区最近的会话继续任务：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --workspace D:\path\to\your-project `
+  --resume latest `
+  "继续刚才的任务，先查看 Todo 再运行测试"
+```
+
+会话数据库位于 workspace 内的 `.codeforge/sessions.sqlite3`。使用 `--no-session`
+可关闭持久化；使用 `--no-compaction` 可关闭上下文压缩。
+
+创建 workspace Skill：
+
+```text
+.codeforge/skills/code-review/SKILL.md
+```
+
+`SKILL.md` 可以包含 `name` 和 `description` frontmatter。模型可通过
+`list_skills`、`read_skill` 渐进加载，也可以显式预加载：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --skill code-review `
+  '使用 $code-review 检查当前改动'
+```
+
+长期记忆默认保存在 `.codeforge/memory.sqlite3`。每次新任务会按用户提示自动召回
+相关记忆，也可以显式要求模型调用 `memory_search`。保存经过确认的项目约定：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --workspace D:\path\to\your-project `
+  "记住本项目完整测试命令是 python -m pytest -q，并用 memory_search 验证"
+```
+
+只读 Subagent 适合代码调查，不会修改文件，但会产生额外模型请求：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --workspace D:\path\to\your-project `
+  "调用 delegate_readonly 调查配置加载路径，再由主 Agent 总结"
+```
+
+后台 Shell 只在当前 CLI 进程生命周期内有效。Agent 应等待并查询结果后再结束；
+若主 Agent 提前结束，CLI 会取消仍在运行的作业：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --workspace D:\path\to\your-project `
+  "用 background_start 运行完整测试，轮询 status，读取 output，最后查看通知"
+```
+
 ## 测试
 
-运行 Day 1 + Day 2 全部离线测试：
+运行 Day 1～Day 4 全部离线测试：
 
 ```powershell
 .\.venv\Scripts\python -m pytest -q -p no:cacheprovider
@@ -158,6 +253,27 @@ CLI 默认 `permission-default=ask`，同时允许 `read_file` 和 `search`。�
   tests\test_audit.py `
   tests\test_workspace.py `
   tests\test_agent_loop.py `
+  -vv -s --show-test-process -p no:cacheprovider
+```
+
+只运行 Day 3 测试：
+
+```powershell
+.\.venv\Scripts\python -m pytest `
+  tests\test_todo.py `
+  tests\test_sqlite_resume.py `
+  tests\test_compaction.py `
+  tests\test_skills.py `
+  -vv -s --show-test-process -p no:cacheprovider
+```
+
+只运行 Day 4 精简版测试：
+
+```powershell
+.\.venv\Scripts\python -m pytest `
+  tests\test_memory.py `
+  tests\test_subagent.py `
+  tests\test_background.py `
   -vv -s --show-test-process -p no:cacheprovider
 ```
 
@@ -202,6 +318,9 @@ pytest 为各测试创建的独立临时 workspace。详细模式会打印每个
 - 审计路径自身也必须位于 workspace 内。
 - Shell 的 cwd 受路径沙箱约束，但 Day 2 尚不是操作系统级进程沙箱；命令文本
   内主动引用的外部绝对路径仍需通过权限审批和 hard-deny 控制。
+- Memory 数据库路径必须在 workspace 内，疑似凭据的内容会被拒绝持久化。
+- 只读 Subagent 的安全边界由独立工具白名单强制，而不是只依赖提示词。
+- 后台 Shell 复用 cwd 沙箱、敏感环境变量过滤和 hard-deny，CLI 退出时清理进程树。
 
 ## 面试讲解要点
 
@@ -219,7 +338,12 @@ pytest 为各测试创建的独立临时 workspace。详细模式会打印每个
 - 工具失败被转换为模型可见的结构化结果，不会直接击穿循环。
 - 安全边界位于工具执行入口，而不是只依赖系统提示词。
 - `apply_patch` 采用结构化变更而不是让模型自由拼接 Shell 命令。
-- 状态通过 reducer 更新，为后续 SQLite checkpoint 和 `--resume` 留出稳定入口。
+- 状态统一通过 reducer 更新，并在关键阶段写入 SQLite checkpoint；`--resume`
+  恢复消息、指标和 Todo，上下文超限时保存确定性摘要。
+- Skills 采用“目录常驻、内容按需读取”，避免把全部说明无条件塞进上下文。
+- 长期 Memory 与会话历史分离：会话用于恢复原对话，Memory 只保存已确认的项目事实。
+- 当前 Subagent 是同步只读调查器，先验证委派和权限隔离，再考虑 Worktree 下的
+  并行可写 Subagent，避免过早引入文件冲突与结果合并复杂度。
 
 ## 许可证
 

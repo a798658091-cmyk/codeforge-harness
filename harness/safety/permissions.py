@@ -25,6 +25,15 @@ class PermissionDecision(str, Enum):
 DEFAULT_PERMISSION_RULES = {
     "read_file": PermissionDecision.ALLOW,
     "search": PermissionDecision.ALLOW,
+    "todo_read": PermissionDecision.ALLOW,
+    "todo_write": PermissionDecision.ALLOW,
+    "list_skills": PermissionDecision.ALLOW,
+    "read_skill": PermissionDecision.ALLOW,
+    "memory_search": PermissionDecision.ALLOW,
+    "background_status": PermissionDecision.ALLOW,
+    "background_output": PermissionDecision.ALLOW,
+    "notification_list": PermissionDecision.ALLOW,
+    "notification_ack": PermissionDecision.ALLOW,
 }
 
 
@@ -135,7 +144,7 @@ class PermissionPolicy:
 
 
 def build_default_permission_policy() -> PermissionPolicy:
-    """创建只读工具允许、其余工具询问的默认本地策略。"""
+    """创建读取、Todo、Skills 允许而高影响工具询问的默认本地策略。"""
 
     return PermissionPolicy(
         DEFAULT_PERMISSION_RULES,
