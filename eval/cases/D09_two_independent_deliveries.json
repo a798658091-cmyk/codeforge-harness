@@ -1,0 +1,25 @@
+{
+  "id": "D09",
+  "name": "并行处理两个独立交付",
+  "category": "multi-task",
+  "description": "在同一请求中完成互不依赖的重试实现与运维文档更新。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/provider.py", "content": "class ProviderError(RuntimeError):\n    pass\n\ndef fetch(client):\n    return client.request()\n"},
+    {"path": "docs/operations.md", "content": "# Operations\n\n## Provider failures\n\nFailures are returned to the caller.\n"},
+    {"path": "tests/test_provider.py", "content": "from src.provider import fetch\n\nclass Client:\n    def request(self):\n        return 'ok'\n\ndef test_success():\n    assert fetch(Client()) == 'ok'\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_provider.py", "content": "from src.provider import ProviderError, fetch\n\nclass FlakyClient:\n    def __init__(self):\n        self.calls = 0\n    def request(self):\n        self.calls += 1\n        if self.calls < 3:\n            raise ProviderError('temporary')\n        return 'ok'\n\ndef test_retries_temporary_provider_errors():\n    client = FlakyClient()\n    assert fetch(client) == 'ok'\n    assert client.calls == 3\n"
+    }
+  ],
+  "turns": [{"prompt": "今天需要一起交付两件互不依赖的事：provider 请求遇到 ProviderError 时最多重试两次，成功路径不受影响；operations 文档补充重试次数和最终失败仍上抛的说明。请完成后做一次整体核对。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_provider.py"]},
+    {"kind": "file_contains", "path": "docs/operations.md", "text": "2"},
+    {"kind": "file_contains", "path": "docs/operations.md", "text": "ProviderError"}
+  ],
+  "capability_policy": {"preferred": ["writable_subagent", "tests"], "discouraged": []},
+  "quality": {"allowed_paths": ["src/provider.py", "tests/**", "docs/operations.md"], "max_changed_files": 5, "max_changed_lines": 180},
+  "tags": ["daily", "multi-task", "parallel-candidate"]
+}

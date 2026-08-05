@@ -1,0 +1,25 @@
+{
+  "id": "D10",
+  "name": "按依赖顺序扩展模型和命令行",
+  "category": "feature",
+  "description": "先扩展领域模型，再让命令行消费新行为，验证依赖任务的正确顺序。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/project.py", "content": "def normalize_name(value):\n    value = value.strip()\n    if not value:\n        raise ValueError('name is required')\n    return value\n"},
+    {"path": "src/cli.py", "content": "import argparse\nfrom src.project import normalize_name\n\ndef main(argv=None):\n    parser = argparse.ArgumentParser()\n    parser.add_argument('name')\n    args = parser.parse_args(argv)\n    print(normalize_name(args.name))\n    return 0\n"},
+    {"path": "tests/test_project.py", "content": "from src.project import normalize_name\n\ndef test_strips_name():\n    assert normalize_name(' demo ') == 'demo'\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_slug.py", "content": "from src.cli import main\nfrom src.project import project_slug\n\ndef test_slug_normalizes_name():\n    assert project_slug(' My Demo App ') == 'my-demo-app'\n\ndef test_cli_prints_slug(capsys):\n    assert main(['My Demo App', '--slug']) == 0\n    assert capsys.readouterr().out.strip() == 'my-demo-app'\n"
+    }
+  ],
+  "turns": [{"prompt": "项目名现在还需要一个稳定 slug：去掉两端空格、转小写、连续空白用单个连字符连接。请先在 project 模块提供公开函数 project_slug，再给现有命令增加 --slug 来输出它；默认输出仍保持原样，并补充验证。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_slug.py"]},
+    {"kind": "python_symbol_exists", "path": "src/project.py", "symbol": "project_slug"},
+    {"kind": "file_contains", "path": "src/cli.py", "text": "--slug"}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["src/**", "tests/**"], "max_changed_files": 4, "max_changed_lines": 160, "require_tests_changed": true},
+  "tags": ["daily", "feature", "dependent-steps"]
+}

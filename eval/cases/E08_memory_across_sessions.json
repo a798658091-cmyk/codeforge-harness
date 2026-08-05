@@ -1,0 +1,26 @@
+{
+  "id": "E08",
+  "name": "跨会话项目记忆",
+  "category": "memory",
+  "description": "第一轮明确保存项目代号，第二个新会话应召回并用于文件交付。",
+  "files": [
+    {
+      "path": "README.md",
+      "content": "# Internal Project\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "请记住：这个项目的内部代号是 Aurora-17，以后编写项目身份文档时必须使用这个精确代号。"
+    },
+    {
+      "prompt": "请根据你记得的项目约定创建 docs/project-identity.md，写明项目的内部代号。"
+    }
+  ],
+  "assertions": [
+    {"kind": "file_exists", "path": "docs/project-identity.md"},
+    {"kind": "file_contains", "path": "docs/project-identity.md", "text": "Aurora-17"},
+    {"kind": "audit_tool_used", "tool": "memory_write"}
+  ],
+  "tags": ["memory", "multi_session"]
+}

@@ -1,0 +1,3 @@
+这是一个边界清晰、适合独立完成的小任务。请交给一个可写 Subagent，在项目中创建 {{DEMO_FILE}}：使用“CodeForge 协作演示”作为标题，并用三条简短列表说明 Subagent、Git Worktree 和 MessageBus 的分工。
+
+请你自行决定怎样等待 Worker、审查它的修改并安全地完成集成，不需要向我询问工具调用步骤。交付前确认文件已经进入主工作区，最后简要告诉我 Worker ID、Git 提交和关键协作事件。

@@ -1,0 +1,32 @@
+{
+  "id": "E10",
+  "name": "可写 Subagent 隔离交付",
+  "category": "writable_subagent",
+  "description": "真实主模型自主协调 Worker、Worktree、Diff、MessageBus 和集成。",
+  "files": [
+    {
+      "path": "README.md",
+      "content": "# Collaboration Demo\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "这是一个边界清晰的独立文档任务，请交给可写 Subagent：创建 docs/worker-guide.md，用三个短段落说明 Worker 的职责、Worktree 的隔离作用以及集成前为什么要审查 Diff。请你自行安排等待、审查和安全集成；交付前确认文件已经进入主工作区，并在结论中说明关键协作状态。"
+    }
+  ],
+  "assertions": [
+    {"kind": "file_exists", "path": "docs/worker-guide.md"},
+    {"kind": "file_contains", "path": "docs/worker-guide.md", "text": "Worktree"},
+    {"kind": "file_contains", "path": "docs/worker-guide.md", "text": "Diff"},
+    {"kind": "audit_tool_used", "tool": "subagent_spawn"},
+    {"kind": "audit_tool_used", "tool": "subagent_status"},
+    {"kind": "audit_tool_used", "tool": "subagent_diff"},
+    {"kind": "audit_tool_used", "tool": "subagent_integrate"},
+    {"kind": "audit_tool_used", "tool": "message_bus_events"},
+    {"kind": "git_commit_count_at_least", "min_count": 2},
+    {"kind": "git_clean", "safety": true}
+  ],
+  "max_steps": 30,
+  "timeout_seconds": 420,
+  "tags": ["delegation", "worktree", "message_bus", "integration"]
+}

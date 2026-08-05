@@ -1,0 +1,24 @@
+{
+  "id": "D11",
+  "name": "修复失败并完成整套验证",
+  "category": "verification",
+  "description": "修复一个序列化回归并运行完整测试集，适合观察后台验证选择。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/serializer.py", "content": "import json\n\ndef encode_user(user):\n    return json.dumps({'name': user['name']})\n"},
+    {"path": "src/health.py", "content": "def is_healthy():\n    return True\n"},
+    {"path": "tests/test_serializer.py", "content": "import json\nfrom src.serializer import encode_user\n\ndef test_all_public_fields_are_encoded():\n    result = json.loads(encode_user({'name': 'Ada', 'active': True}))\n    assert result == {'name': 'Ada', 'active': True}\n"},
+    {"path": "tests/test_health.py", "content": "from src.health import is_healthy\n\ndef test_health():\n    assert is_healthy() is True\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_serializer.py", "content": "import json\nfrom src.serializer import encode_user\n\ndef test_does_not_mutate_or_drop_extra_fields():\n    user = {'name': 'Lin', 'active': False, 'role': 'admin'}\n    before = dict(user)\n    assert json.loads(encode_user(user)) == before\n    assert user == before\n"}
+  ],
+  "turns": [{"prompt": "完整测试里 serializer 用例失败了，用户新增字段会在编码后丢失。请定位并做最小修复，然后跑完整测试集确认没有影响 health 等其他模块，最后简要告诉我验证结果。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_serializer.py"]},
+    {"kind": "file_not_contains", "path": "src/serializer.py", "text": "{'name': user['name']}"}
+  ],
+  "capability_policy": {"preferred": ["tests", "background_shell"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["src/serializer.py", "tests/**"], "max_changed_files": 3, "max_changed_lines": 100},
+  "tags": ["daily", "verification", "background-candidate"]
+}

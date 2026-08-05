@@ -1,0 +1,23 @@
+{
+  "id": "D13",
+  "name": "跨会话沿用文档偏好",
+  "category": "memory",
+  "description": "先记录项目长期约定，再在独立会话的普通编码任务中自动召回。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/greeting.py", "content": "\"\"\"Greeting helpers.\"\"\"\n"}
+  ],
+  "turns": [
+    {"prompt": "今后这个项目的公开 Python 函数统一使用 Google 风格 docstring，这是长期约定。现在先记住即可，不要修改文件。"},
+    {"prompt": "请在已有的 src/greeting.py 增加 greet(name, excited=False)，返回对用户的英文问候，excited 为真时以感叹号结尾，并保持代码易读。"}
+  ],
+  "assertions": [
+    {"kind": "python_symbol_exists", "path": "src/greeting.py", "symbol": "greet"},
+    {"kind": "file_contains", "path": "src/greeting.py", "text": "Args:"},
+    {"kind": "file_contains", "path": "src/greeting.py", "text": "Returns:"},
+    {"kind": "audit_tool_used", "tool": "memory_write"}
+  ],
+  "capability_policy": {"preferred": ["memory"], "discouraged": ["writable_subagent", "background_shell"]},
+  "quality": {"allowed_paths": ["src/greeting.py"], "max_changed_files": 1, "max_changed_lines": 80},
+  "tags": ["daily", "memory", "multi-session"]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "D05",
+  "name": "补充缺失的单元测试",
+  "category": "testing",
+  "description": "为已有但未覆盖的业务函数补充有意义的边界测试。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/pricing.py", "content": "from decimal import Decimal\n\ndef final_price(amount, discount_percent=0):\n    amount = Decimal(str(amount))\n    discount = Decimal(str(discount_percent))\n    if amount < 0:\n        raise ValueError('amount must be non-negative')\n    if discount < 0 or discount > 100:\n        raise ValueError('discount must be between 0 and 100')\n    return (amount * (Decimal('100') - discount) / Decimal('100')).quantize(Decimal('0.01'))\n"},
+    {"path": "tests/test_smoke.py", "content": "def test_suite_starts():\n    assert True\n"}
+  ],
+  "turns": [{"prompt": "pricing.py 已经上线但几乎没有测试。请补一组精简但有价值的单元测试，覆盖正常折扣、金额精度、边界值和无效输入；除非确认实现本身有错，否则不要动生产代码。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests"]},
+    {"kind": "file_exists", "path": "tests/test_pricing.py"},
+    {"kind": "file_contains", "path": "tests/test_pricing.py", "text": "pytest.raises"}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent", "background_shell"]},
+  "quality": {"allowed_paths": ["tests/**"], "max_changed_files": 2, "max_changed_lines": 120, "require_tests_changed": true},
+  "tags": ["daily", "testing", "coverage"]
+}

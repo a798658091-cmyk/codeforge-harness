@@ -1,0 +1,32 @@
+{
+  "id": "E04",
+  "name": "跨文件函数改名",
+  "category": "coding",
+  "description": "搜索并更新定义、引用和测试，验证多文件一致性。",
+  "files": [
+    {
+      "path": "src/greeter.py",
+      "content": "def greet(name):\n    return f'hello {name}'\n"
+    },
+    {
+      "path": "src/app.py",
+      "content": "from src.greeter import greet\n\ndef render(name):\n    return greet(name)\n"
+    },
+    {
+      "path": "tests/test_app.py",
+      "content": "from src.app import render\n\ndef test_render():\n    assert render('Ada') == 'hello Ada'\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "请把公开函数 greet 重命名为 welcome，并更新项目内所有引用。保持现有行为不变，最后运行测试验证没有遗漏。"
+    }
+  ],
+  "assertions": [
+    {"kind": "file_contains", "path": "src/greeter.py", "text": "def welcome(name):"},
+    {"kind": "file_not_contains", "path": "src/greeter.py", "text": "def greet(name):"},
+    {"kind": "file_contains", "path": "src/app.py", "text": "welcome(name)"},
+    {"kind": "tests_pass", "targets": ["tests/test_app.py"]}
+  ],
+  "tags": ["multi_file", "verification"]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "D04",
+  "name": "整理重复校验逻辑",
+  "category": "refactor",
+  "description": "在行为保持不变的约束下消除两个入口中的重复校验。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/users.py", "content": "def create_user(name, age):\n    if not name or not name.strip():\n        raise ValueError('name is required')\n    if age < 0 or age > 150:\n        raise ValueError('age is invalid')\n    return {'name': name.strip(), 'age': age}\n\ndef update_user(user, name, age):\n    if not name or not name.strip():\n        raise ValueError('name is required')\n    if age < 0 or age > 150:\n        raise ValueError('age is invalid')\n    user.update(name=name.strip(), age=age)\n    return user\n"},
+    {"path": "tests/test_users.py", "content": "import pytest\nfrom src.users import create_user, update_user\n\ndef test_create_and_update():\n    assert create_user(' Ada ', 20) == {'name': 'Ada', 'age': 20}\n    assert update_user({}, ' Bob ', 30) == {'name': 'Bob', 'age': 30}\n\n@pytest.mark.parametrize('name,age', [('', 20), ('ok', -1), ('ok', 151)])\ndef test_create_rejects_invalid(name, age):\n    with pytest.raises(ValueError):\n        create_user(name, age)\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_users.py", "content": "import pytest\nfrom src.users import create_user, update_user\n\n@pytest.mark.parametrize('factory', [lambda: create_user(' ', 10), lambda: update_user({}, ' ', 10), lambda: update_user({}, 'ok', 200)])\ndef test_all_paths_keep_validation(factory):\n    with pytest.raises(ValueError):\n        factory()\n"}
+  ],
+  "turns": [{"prompt": "users.py 里创建和更新用户的校验重复了，后面还会增加入口。请做一次小范围重构来复用规则，外部函数签名、返回值和错误行为都不要改变，并验证现有功能。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_users.py"]}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent", "background_shell"]},
+  "quality": {"allowed_paths": ["src/users.py", "tests/**"], "max_changed_files": 3, "max_changed_lines": 120, "max_cyclomatic_complexity": 8},
+  "tags": ["daily", "refactor", "compatibility"]
+}

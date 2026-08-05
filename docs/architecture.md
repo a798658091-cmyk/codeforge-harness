@@ -1,7 +1,16 @@
 # CodeForge Harness 架构
 
-CodeForge 使用原生循环连接模型、工具和本地工作区。Day 3 增加会话与上下文管理，
-Day 4 精简版增加长期 Memory、同步只读 Subagent、后台 Shell 和运行时通知。
+CodeForge 使用原生循环连接模型、工具和本地工作区，并已加入长期 Memory、
+同步只读 Subagent、异步可写 Subagent、后台 Shell、stdio MCP、Git Worktree 和
+进程内 MessageBus。
+
+完整模块图：
+
+![CodeForge 完整架构](codeforge-full-architecture-detailed.svg)
+
+可写协作子系统的单独展开图：
+
+![Subagent、Worktree 与 MessageBus](subagent-worktree-messagebus-detailed.svg)
 
 ```mermaid
 flowchart TB
@@ -15,9 +24,14 @@ flowchart TB
     CHECKPOINT --> ANSWER["最终答案 + session ID"]
     DECISION -- "工具" --> REGISTRY["Tool Registry"]
     REGISTRY --> SAFETY["参数校验 → 权限 → Pre Hook → 沙箱"]
-    SAFETY --> TOOLS["代码 / Todo / Skills / Memory / 后台 Shell"]
+    SAFETY --> TOOLS["代码 / Todo / Skills / Memory / 后台 Shell / MCP"]
     TOOLS --> SUBAGENT["只读 Subagent 独立循环"]
     SUBAGENT --> READONLY["read / search / Skills / memory_search"]
+    TOOLS --> WRITABLE["可写 Subagent 管理器"]
+    WRITABLE --> WORKTREE["独立 Git Worktree + Worker"]
+    WORKTREE --> COMMIT["自动 Commit + Diff 审查"]
+    COMMIT --> INTEGRATE["审批后 cherry-pick"]
+    WRITABLE -. "生命周期事件" .-> BUS["进程内 MessageBus"]
     TOOLS --> NOTICE["后台终态通知"]
     TOOLS --> AFTER["Post Hook → 审计 → reducer"]
     AFTER --> CHECKPOINT
@@ -38,6 +52,7 @@ SQLite 检查点保存的是完整可恢复状态；上下文压缩改变后续�
 结果也会立即创建检查点。审计日志负责回答“工具做过什么”，会话数据库负责回答
 “Agent 对话和计划进行到哪里”，Memory 负责“哪些已确认知识值得跨会话复用”。
 
-通知当前只在一个 CLI 进程内保存，退出前统一展示；后台进程也只属于当前 CLI，
-退出时会被清理。只读 Subagent 同步执行且没有写工具，完整并行委派留待 Worktree
-隔离和 MessageBus 完成后再实现。
+通知和 MessageBus 当前只在一个 CLI 进程内保存；后台进程在退出时清理。只读
+Subagent 同步执行且没有写工具；可写 Subagent 异步运行在独立 Worktree，完成后
+自动提交，但必须经过 Diff 审查和 `subagent_integrate` 才会进入主分支。当前不做
+递归团队、事件持久化、自动冲突解决和操作系统级进程隔离。

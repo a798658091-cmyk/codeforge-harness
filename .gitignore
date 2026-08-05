@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+eval/results/
 *.db
 *.sqlite
 *.sqlite3

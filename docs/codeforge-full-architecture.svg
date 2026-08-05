@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1260" viewBox="0 0 1600 1260" role="img" aria-labelledby="title desc">
+  <title id="title">CodeForge Harness 完整架构图</title>
+  <desc id="desc">展示用户输入、CLI、Agent Loop、状态与持久化、工具安全链、代码工具、只读 Subagent、后台任务、MCP，以及新增可写 Subagent、Git Worktree 和 MessageBus 的完整关系。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrowRose" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#be185d"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 30px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #f8fafc; }
+      .subtitle { font: 400 15px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #cbd5e1; }
+      .section { font: 700 18px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #0f172a; }
+      .node-title { font: 700 15px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #0f172a; }
+      .node-text { font: 400 13px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #334155; }
+      .node-code { font: 600 12px Consolas, "Microsoft YaHei", monospace; fill: #334155; }
+      .small { font: 400 12px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #475569; }
+      .label { font: 600 12px "Microsoft YaHei", "Segoe UI", sans-serif; fill: #334155; }
+      .group { stroke-width: 1.5; rx: 18; }
+      .node { stroke-width: 1.5; rx: 12; filter: url(#shadow); }
+      .flow { fill: none; stroke: #334155; stroke-width: 2; marker-end: url(#arrow); }
+      .flow-blue { fill: none; stroke: #2563eb; stroke-width: 2.2; marker-end: url(#arrowBlue); }
+      .flow-teal { fill: none; stroke: #0f766e; stroke-width: 2.2; marker-end: url(#arrowTeal); }
+      .event { fill: none; stroke: #be185d; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#arrowRose); }
+      .return { fill: none; stroke: #64748b; stroke-width: 1.8; stroke-dasharray: 6 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1260" fill="#f8fafc"/>
+  <rect width="1600" height="90" fill="#0f172a"/>
+  <text x="54" y="43" class="title">CodeForge Harness 完整架构</text>
+  <text x="54" y="70" class="subtitle">原生 Agent Loop + 安全工具链 + 会话记忆 + MCP + 双模式 Subagent + Git Worktree + 进程内 MessageBus</text>
+
+  <!-- 入口与 Provider -->
+  <rect x="48" y="112" width="1504" height="105" class="group" fill="#eff6ff" stroke="#93c5fd"/>
+  <text x="70" y="140" class="section">1　入口与模型</text>
+  <rect x="82" y="154" width="230" height="46" class="node" fill="#ffffff" stroke="#60a5fa"/>
+  <text x="197" y="183" text-anchor="middle" class="node-title">用户任务 / --resume</text>
+  <rect x="378" y="146" width="300" height="62" class="node" fill="#ffffff" stroke="#60a5fa"/>
+  <text x="528" y="170" text-anchor="middle" class="node-title">CLI 组装器</text>
+  <text x="528" y="191" text-anchor="middle" class="node-text">配置、审批、组件生命周期、最终输出</text>
+  <rect x="750" y="146" width="300" height="62" class="node" fill="#ffffff" stroke="#60a5fa"/>
+  <text x="900" y="170" text-anchor="middle" class="node-title">Settings / 环境变量</text>
+  <text x="900" y="191" text-anchor="middle" class="node-text">模型、URL、权限、审计、会话与并发上限</text>
+  <rect x="1122" y="146" width="350" height="62" class="node" fill="#ffffff" stroke="#60a5fa"/>
+  <text x="1297" y="170" text-anchor="middle" class="node-title">ModelProvider</text>
+  <text x="1297" y="191" text-anchor="middle" class="node-text">OpenAI-compatible / DeepSeek / Mock</text>
+  <path d="M312 177 H378" class="flow-blue"/>
+  <path d="M678 177 H750" class="flow-blue"/>
+  <path d="M1050 177 H1122" class="flow-blue"/>
+
+  <!-- Agent 核心与状态 -->
+  <rect x="48" y="240" width="720" height="282" class="group" fill="#eef2ff" stroke="#a5b4fc"/>
+  <text x="70" y="270" class="section">2　主 Agent 核心循环</text>
+  <rect x="82" y="294" width="260" height="92" class="node" fill="#ffffff" stroke="#818cf8"/>
+  <text x="212" y="320" text-anchor="middle" class="node-title">AgentLoop.run</text>
+  <text x="212" y="344" text-anchor="middle" class="node-text">messages → Provider → tool calls</text>
+  <text x="212" y="366" text-anchor="middle" class="node-text">支持步数上限、检查点和协作取消</text>
+  <rect x="410" y="294" width="310" height="92" class="node" fill="#ffffff" stroke="#818cf8"/>
+  <text x="565" y="320" text-anchor="middle" class="node-title">Reducer / AgentState</text>
+  <text x="565" y="344" text-anchor="middle" class="node-text">消息、用量、步骤、工具结果、Todo</text>
+  <text x="565" y="366" text-anchor="middle" class="node-text">每个事件通过 reduce_state 统一更新</text>
+  <path d="M342 340 H410" class="flow-blue"/>
+  <path d="M410 370 C370 414 310 414 276 388" class="return"/>
+
+  <rect x="82" y="414" width="638" height="78" class="node" fill="#faf5ff" stroke="#c084fc"/>
+  <text x="401" y="438" text-anchor="middle" class="node-title">上下文与持久状态</text>
+  <text x="401" y="462" text-anchor="middle" class="node-text">Todo　|　SQLite 会话/Checkpoint/--resume　|　上下文压缩</text>
+  <text x="401" y="482" text-anchor="middle" class="node-text">Skills 渐进加载　|　Workspace Memory 检索与显式记忆保障</text>
+  <path d="M565 386 V414" class="flow"/>
+
+  <!-- Tool Registry 安全链 -->
+  <rect x="800" y="240" width="752" height="282" class="group" fill="#fffbeb" stroke="#fbbf24"/>
+  <text x="822" y="270" class="section">3　统一工具入口与安全链</text>
+  <rect x="834" y="294" width="200" height="72" class="node" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="934" y="320" text-anchor="middle" class="node-title">ToolRegistry.dispatch</text>
+  <text x="934" y="344" text-anchor="middle" class="node-text">唯一工具调用入口</text>
+  <rect x="1070" y="294" width="200" height="72" class="node" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="1170" y="320" text-anchor="middle" class="node-title">Pydantic 校验</text>
+  <text x="1170" y="344" text-anchor="middle" class="node-text">拒绝缺失、额外、错误参数</text>
+  <rect x="1306" y="294" width="212" height="72" class="node" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="1412" y="320" text-anchor="middle" class="node-title">allow / ask / deny</text>
+  <text x="1412" y="344" text-anchor="middle" class="node-text">spawn / integrate 默认 ask</text>
+  <path d="M1034 330 H1070" class="flow"/>
+  <path d="M1270 330 H1306" class="flow"/>
+
+  <rect x="834" y="398" width="200" height="72" class="node" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="934" y="424" text-anchor="middle" class="node-title">PreToolUse Hooks</text>
+  <text x="934" y="448" text-anchor="middle" class="node-text">执行前允许或阻断</text>
+  <rect x="1070" y="398" width="200" height="72" class="node" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="1170" y="424" text-anchor="middle" class="node-title">Workspace 工具</text>
+  <text x="1170" y="448" text-anchor="middle" class="node-text">路径约束 + Shell hard-deny</text>
+  <rect x="1306" y="398" width="212" height="72" class="node" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="1412" y="424" text-anchor="middle" class="node-title">PostToolUse + Audit</text>
+  <text x="1412" y="448" text-anchor="middle" class="node-text">结果观察 + 脱敏 JSONL</text>
+  <path d="M1412 366 V382 H934 V398" class="flow"/>
+  <path d="M1034 434 H1070" class="flow"/>
+  <path d="M1270 434 H1306" class="flow"/>
+
+  <path d="M1297 208 V224 H212 V294" class="flow-blue"/>
+  <path d="M342 315 C565 240 704 240 834 315" class="flow-blue"/>
+  <path d="M1412 470 V498 H565 V386" class="return"/>
+  <text x="976" y="493" class="label">tool result → reducer → SQLite checkpoint → 下一轮模型</text>
+
+  <!-- 工具模块 -->
+  <rect x="48" y="548" width="1504" height="222" class="group" fill="#f0fdf4" stroke="#86efac"/>
+  <text x="70" y="578" class="section">4　按模块划分的工具能力</text>
+  <rect x="82" y="608" width="250" height="126" class="node" fill="#ffffff" stroke="#4ade80"/>
+  <text x="207" y="634" text-anchor="middle" class="node-title">代码与规划工具</text>
+  <text x="207" y="658" text-anchor="middle" class="node-code">read / write / edit / search</text>
+  <text x="207" y="680" text-anchor="middle" class="node-code">apply_patch / shell / run_tests</text>
+  <text x="207" y="702" text-anchor="middle" class="node-code">todo_* / skills / memory_*</text>
+  <text x="207" y="721" text-anchor="middle" class="small">全部经安全链分发</text>
+
+  <rect x="370" y="608" width="250" height="126" class="node" fill="#ffffff" stroke="#4ade80"/>
+  <text x="495" y="634" text-anchor="middle" class="node-title">只读 Subagent</text>
+  <text x="495" y="658" text-anchor="middle" class="node-code">delegate_readonly</text>
+  <text x="495" y="680" text-anchor="middle" class="node-text">同步、独立 Agent Loop</text>
+  <text x="495" y="702" text-anchor="middle" class="node-text">仅 read/search/skills/memory_search</text>
+  <text x="495" y="721" text-anchor="middle" class="small">不能写入、Shell 或递归委派</text>
+
+  <rect x="658" y="608" width="250" height="126" class="node" fill="#ecfeff" stroke="#14b8a6"/>
+  <text x="783" y="634" text-anchor="middle" class="node-title">可写 Subagent 管理工具</text>
+  <text x="783" y="658" text-anchor="middle" class="node-code">spawn / status(wait) / list</text>
+  <text x="783" y="680" text-anchor="middle" class="node-code">cancel / diff / integrate</text>
+  <text x="783" y="702" text-anchor="middle" class="node-text">异步，默认最多 2 个 Worker</text>
+  <text x="783" y="721" text-anchor="middle" class="small">进入下方协作子系统</text>
+
+  <rect x="946" y="608" width="250" height="126" class="node" fill="#ffffff" stroke="#4ade80"/>
+  <text x="1071" y="634" text-anchor="middle" class="node-title">后台 Shell 与通知</text>
+  <text x="1071" y="658" text-anchor="middle" class="node-code">background_start/status</text>
+  <text x="1071" y="680" text-anchor="middle" class="node-code">output/cancel + notification_*</text>
+  <text x="1071" y="702" text-anchor="middle" class="node-text">非阻塞进程、日志、超时与退出清理</text>
+
+  <rect x="1234" y="608" width="284" height="126" class="node" fill="#ffffff" stroke="#4ade80"/>
+  <text x="1376" y="634" text-anchor="middle" class="node-title">真实 stdio MCP</text>
+  <text x="1376" y="658" text-anchor="middle" class="node-code">initialize → tools/list → tools/call</text>
+  <text x="1376" y="680" text-anchor="middle" class="node-text">外部 Server 工具动态注册</text>
+  <text x="1376" y="702" text-anchor="middle" class="node-text">仍经过权限、Hooks 与审计</text>
+  <path d="M1170 470 V540 H207 V608" class="flow"/>
+  <path d="M1170 540 H495 V608" class="flow"/>
+  <path d="M1170 540 H783 V608" class="flow-teal"/>
+  <path d="M1170 540 H1071 V608" class="flow"/>
+  <path d="M1170 540 H1376 V608" class="flow"/>
+
+  <!-- 可写协作子系统 -->
+  <rect x="48" y="800" width="1504" height="386" class="group" fill="#ecfeff" stroke="#2dd4bf"/>
+  <text x="70" y="832" class="section">5　新增：可写 Subagent + Git Worktree + MessageBus 协作子系统</text>
+  <text x="70" y="856" class="small">实线表示执行/集成；粉色虚线表示生命周期事件。Worker 不共享主目录，也不能递归创建 Subagent。</text>
+
+  <rect x="82" y="888" width="220" height="112" class="node" fill="#ffffff" stroke="#14b8a6"/>
+  <text x="192" y="916" text-anchor="middle" class="node-title">WritableSubagentManager</text>
+  <text x="192" y="940" text-anchor="middle" class="node-text">线程池 + 状态机 + 取消信号</text>
+  <text x="192" y="962" text-anchor="middle" class="node-text">queued → running → completed</text>
+  <text x="192" y="982" text-anchor="middle" class="small">failed / cancelled / integrated</text>
+
+  <rect x="340" y="888" width="220" height="112" class="node" fill="#fff7ed" stroke="#fb923c"/>
+  <text x="450" y="916" text-anchor="middle" class="node-title">WorktreeManager.create</text>
+  <text x="450" y="940" text-anchor="middle" class="node-code">.worktrees/&lt;id&gt;</text>
+  <text x="450" y="962" text-anchor="middle" class="node-code">codeforge/subagent/&lt;id&gt;</text>
+  <text x="450" y="982" text-anchor="middle" class="small">基于主仓库当前已提交 HEAD</text>
+
+  <rect x="598" y="888" width="250" height="112" class="node" fill="#ffffff" stroke="#14b8a6"/>
+  <text x="723" y="916" text-anchor="middle" class="node-title">隔离 Worker AgentLoop</text>
+  <text x="723" y="940" text-anchor="middle" class="node-text">读写/Patch/Shell/Test/Todo/Skills</text>
+  <text x="723" y="962" text-anchor="middle" class="node-text">无 Memory、MCP、后台任务、递归委派</text>
+  <text x="723" y="982" text-anchor="middle" class="small">文件工具受独立 Worktree 路径约束</text>
+
+  <rect x="886" y="888" width="210" height="112" class="node" fill="#fff7ed" stroke="#fb923c"/>
+  <text x="991" y="916" text-anchor="middle" class="node-title">自动 Git Commit</text>
+  <text x="991" y="940" text-anchor="middle" class="node-code">git add -A + commit</text>
+  <text x="991" y="962" text-anchor="middle" class="node-text">主工作区此时不发生修改</text>
+  <text x="991" y="982" text-anchor="middle" class="small">失败时保留 Worktree 供排查</text>
+
+  <rect x="1134" y="888" width="180" height="112" class="node" fill="#ffffff" stroke="#14b8a6"/>
+  <text x="1224" y="916" text-anchor="middle" class="node-title">等待与审查</text>
+  <text x="1224" y="940" text-anchor="middle" class="node-code">status(wait=30)</text>
+  <text x="1224" y="962" text-anchor="middle" class="node-code">subagent_diff</text>
+  <text x="1224" y="982" text-anchor="middle" class="small">确认答案、提交和补丁</text>
+
+  <rect x="1352" y="888" width="166" height="112" class="node" fill="#fff7ed" stroke="#fb923c"/>
+  <text x="1435" y="916" text-anchor="middle" class="node-title">批准后集成</text>
+  <text x="1435" y="940" text-anchor="middle" class="node-code">cherry-pick</text>
+  <text x="1435" y="962" text-anchor="middle" class="node-text">进入主工作区</text>
+  <text x="1435" y="982" text-anchor="middle" class="small">冲突自动 abort</text>
+
+  <path d="M783 734 V790 H192 V888" class="flow-teal"/>
+  <path d="M302 944 H340" class="flow-teal"/>
+  <path d="M560 944 H598" class="flow-teal"/>
+  <path d="M848 944 H886" class="flow-teal"/>
+  <path d="M1096 944 H1134" class="flow-teal"/>
+  <path d="M1314 944 H1352" class="flow-teal"/>
+
+  <rect x="82" y="1040" width="550" height="106" class="node" fill="#fdf2f8" stroke="#f472b6"/>
+  <text x="357" y="1068" text-anchor="middle" class="node-title">进程内 MessageBus（有界、线程安全）</text>
+  <text x="357" y="1092" text-anchor="middle" class="node-code">worktree.created / committed / integrated</text>
+  <text x="357" y="1114" text-anchor="middle" class="node-code">subagent.queued / running / completed / failed / cancelled</text>
+  <text x="357" y="1135" text-anchor="middle" class="small">message_bus_events 查询；当前不写入 SQLite，不跨进程恢复</text>
+
+  <rect x="704" y="1040" width="360" height="106" class="node" fill="#ffffff" stroke="#14b8a6"/>
+  <text x="884" y="1068" text-anchor="middle" class="node-title">主 Agent 获得结构化结果</text>
+  <text x="884" y="1092" text-anchor="middle" class="node-text">状态、answer、steps、tool_calls、commit、diff</text>
+  <text x="884" y="1114" text-anchor="middle" class="node-text">继续经 reducer 写入当前 SQLite checkpoint</text>
+  <text x="884" y="1135" text-anchor="middle" class="small">MessageBus 事件本身仅服务本次进程内协调</text>
+
+  <rect x="1136" y="1040" width="382" height="106" class="node" fill="#fff7ed" stroke="#fb923c"/>
+  <text x="1327" y="1068" text-anchor="middle" class="node-title">主 Git Workspace / 当前分支</text>
+  <text x="1327" y="1092" text-anchor="middle" class="node-text">集成前必须干净；未提交内容不会传给 Worker</text>
+  <text x="1327" y="1114" text-anchor="middle" class="node-text">集成成功后才看到 Worker 的文件修改</text>
+  <text x="1327" y="1135" text-anchor="middle" class="small">Worktree 是 Git 隔离，不是操作系统级进程沙箱</text>
+
+  <path d="M192 1000 V1020 H357 V1040" class="event"/>
+  <path d="M450 1000 V1020 H357 V1040" class="event"/>
+  <path d="M723 1000 V1020 H357 V1040" class="event"/>
+  <path d="M991 1000 V1020 H357 V1040" class="event"/>
+  <path d="M1435 1000 V1020 H357 V1040" class="event"/>
+  <path d="M632 1093 H704" class="return"/>
+  <path d="M1064 1093 H1136" class="flow-blue"/>
+  <path d="M1435 1000 V1026 H1327 V1040" class="flow-teal"/>
+
+  <!-- 图例 -->
+  <line x1="70" y1="1220" x2="112" y2="1220" stroke="#334155" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="124" y="1225" class="small">主调用/数据流</text>
+  <line x1="275" y1="1220" x2="317" y2="1220" stroke="#0f766e" stroke-width="2.2" marker-end="url(#arrowTeal)"/>
+  <text x="329" y="1225" class="small">可写协作与 Git 流</text>
+  <line x1="525" y1="1220" x2="567" y2="1220" stroke="#be185d" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrowRose)"/>
+  <text x="579" y="1225" class="small">MessageBus 生命周期事件</text>
+  <text x="1518" y="1225" text-anchor="end" class="small">最小可用范围：不含递归团队、自动冲突解决、持久化事件总线</text>
+</svg>

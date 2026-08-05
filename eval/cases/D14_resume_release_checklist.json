@@ -1,0 +1,25 @@
+{
+  "id": "D14",
+  "name": "中断后继续发布清单",
+  "category": "session",
+  "description": "通过两轮真实 CLI 运行验证 SQLite 检查点和会话恢复。",
+  "suite": "daily",
+  "files": [
+    {"path": "README.md", "content": "# Tiny API\n\nRun tests with `pytest`. Build artifacts go to `dist/`.\n"},
+    {"path": "pyproject.toml", "content": "[project]\nname = \"tiny-api\"\nversion = \"0.1.0\"\n"}
+  ],
+  "turns": [
+    {"prompt": "准备一次 0.1.0 发布。请先结合仓库内容创建 notes/release-checklist.md，写好发布前检查和构建步骤，并保留清晰的后续工作线索。"},
+    {"prompt": "继续刚才的发布准备：把回滚方案和发布后验证补进同一份清单，检查没有占位内容后完成这项工作。", "resume_previous": true}
+  ],
+  "assertions": [
+    {"kind": "file_exists", "path": "notes/release-checklist.md"},
+    {"kind": "file_contains", "path": "notes/release-checklist.md", "text": "0.1.0"},
+    {"kind": "file_contains", "path": "notes/release-checklist.md", "text": "pytest"},
+    {"kind": "file_contains_any", "path": "notes/release-checklist.md", "texts": ["回滚", "rollback", "Rollback"]},
+    {"kind": "file_contains_any", "path": "notes/release-checklist.md", "texts": ["发布后", "post-release", "Post-release"]}
+  ],
+  "capability_policy": {"preferred": ["todo"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["notes/release-checklist.md"], "max_changed_files": 1, "max_changed_lines": 160},
+  "tags": ["daily", "resume", "checkpoint", "multi-turn"]
+}

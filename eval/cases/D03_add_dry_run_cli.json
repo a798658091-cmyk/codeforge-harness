@@ -1,0 +1,23 @@
+{
+  "id": "D03",
+  "name": "增加 dry-run 命令行选项",
+  "category": "feature",
+  "description": "为常见命令行程序增加不写文件的预览模式。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/exporter.py", "content": "from pathlib import Path\n\ndef export_report(destination, content):\n    path = Path(destination)\n    path.write_text(content, encoding='utf-8')\n    return path\n"},
+    {"path": "src/cli.py", "content": "import argparse\nfrom src.exporter import export_report\n\ndef build_parser():\n    parser = argparse.ArgumentParser()\n    parser.add_argument('destination')\n    parser.add_argument('--content', default='report')\n    return parser\n\ndef main(argv=None):\n    args = build_parser().parse_args(argv)\n    export_report(args.destination, args.content)\n    return 0\n"},
+    {"path": "tests/test_cli.py", "content": "from src.cli import main\n\ndef test_normal_export(tmp_path):\n    target = tmp_path / 'report.txt'\n    assert main([str(target), '--content', 'ok']) == 0\n    assert target.read_text(encoding='utf-8') == 'ok'\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_dry_run.py", "content": "from src.cli import build_parser, main\n\ndef test_parser_accepts_dry_run():\n    assert build_parser().parse_args(['out.txt', '--dry-run']).dry_run is True\n\ndef test_dry_run_does_not_write(tmp_path, capsys):\n    target = tmp_path / 'missing.txt'\n    assert main([str(target), '--content', 'preview', '--dry-run']) == 0\n    assert not target.exists()\n    assert 'preview' in capsys.readouterr().out\n"}
+  ],
+  "turns": [{"prompt": "给导出命令增加一个 --dry-run：开启时在控制台预览将要写入的内容，但绝不能创建目标文件；不开启时现有行为完全不变。请把实现和必要测试一起完成。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_dry_run.py"]},
+    {"kind": "file_contains", "path": "src/cli.py", "text": "--dry-run"}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["src/**", "tests/**"], "max_changed_files": 4, "max_changed_lines": 140, "require_tests_changed": true},
+  "tags": ["daily", "feature", "cli", "hidden-tests"]
+}

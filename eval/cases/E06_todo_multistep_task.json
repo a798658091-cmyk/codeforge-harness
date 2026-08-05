@@ -1,0 +1,32 @@
+{
+  "id": "E06",
+  "name": "Todo 驱动的多步骤任务",
+  "category": "planning",
+  "description": "调查、实现、文档和测试组成的任务应维护并完成 Todo。",
+  "files": [
+    {
+      "path": "src/settings.py",
+      "content": "DEFAULT_TIMEOUT = 30\n"
+    },
+    {
+      "path": "tests/test_settings.py",
+      "content": "from src.settings import DEFAULT_TIMEOUT\n\ndef test_timeout():\n    assert DEFAULT_TIMEOUT == 45\n"
+    },
+    {
+      "path": "README.md",
+      "content": "# Settings Demo\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "这是一个多步骤修改，请维护简洁的任务清单：先调查默认超时配置，把它改成 45；然后在 docs/configuration.md 记录新默认值；最后运行相关测试并把任务清单更新为完成。"
+    }
+  ],
+  "assertions": [
+    {"kind": "file_contains", "path": "src/settings.py", "text": "DEFAULT_TIMEOUT = 45"},
+    {"kind": "file_contains", "path": "docs/configuration.md", "text": "45"},
+    {"kind": "tests_pass", "targets": ["tests/test_settings.py"]},
+    {"kind": "todo_all_completed"}
+  ],
+  "tags": ["todo", "multi_step", "verification"]
+}

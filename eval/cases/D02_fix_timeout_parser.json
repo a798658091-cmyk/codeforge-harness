@@ -1,0 +1,22 @@
+{
+  "id": "D02",
+  "name": "修复超时解析边界问题",
+  "category": "bugfix",
+  "description": "修复配置解析中的空字符串缺陷，并用公开与隐藏测试验证兼容性。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/config.py", "content": "def parse_timeout(value, default=30):\n    \"\"\"Parse an optional timeout value.\"\"\"\n    if value is None:\n        return default\n    return int(value)\n"},
+    {"path": "tests/test_config.py", "content": "from src.config import parse_timeout\n\ndef test_integer_text():\n    assert parse_timeout('12') == 12\n\ndef test_none_uses_default():\n    assert parse_timeout(None, 9) == 9\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_timeout.py", "content": "import pytest\nfrom src.config import parse_timeout\n\ndef test_empty_text_uses_default():\n    assert parse_timeout('', 7) == 7\n\ndef test_whitespace_uses_default():\n    assert parse_timeout('   ', 8) == 8\n\ndef test_zero_is_preserved():\n    assert parse_timeout('0', 5) == 0\n\ndef test_bad_text_still_fails():\n    with pytest.raises(ValueError):\n        parse_timeout('later')\n"}
+  ],
+  "turns": [{"prompt": "线上发现超时配置传空字符串或只有空格时会直接报错，我们希望这种情况沿用 default；正常数字、0 和真正非法的文本仍保持原有语义。请修好并确认相关测试通过。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests/test_config.py", "hidden/test_hidden_timeout.py"]},
+    {"kind": "file_not_contains", "path": "src/config.py", "text": "except Exception"}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent", "background_shell"]},
+  "quality": {"allowed_paths": ["src/config.py", "tests/**"], "max_changed_files": 3, "max_changed_lines": 80},
+  "tags": ["daily", "bugfix", "hidden-tests", "verification"]
+}

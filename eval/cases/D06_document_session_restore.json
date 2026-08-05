@@ -1,0 +1,21 @@
+{
+  "id": "D06",
+  "name": "补全会话恢复文档",
+  "category": "documentation",
+  "description": "阅读真实参数定义后补充可以直接复制的会话恢复说明。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/cli.py", "content": "import argparse\n\ndef build_parser():\n    parser = argparse.ArgumentParser()\n    parser.add_argument('task')\n    parser.add_argument('--session-id')\n    parser.add_argument('--resume', metavar='SESSION_ID')\n    parser.add_argument('--session-db', default='.app/sessions.sqlite3')\n    return parser\n"},
+    {"path": "README.md", "content": "# Task Runner\n\n## Running a task\n\n```powershell\npython -m src.cli \"检查项目\" --session-id demo-1\n```\n\n## Session restore\n\nTODO\n"}
+  ],
+  "turns": [{"prompt": "README 的 Session restore 还是空的。请以当前 cli.py 为准补全这一节，说明首次会话、恢复会话和自定义数据库路径，并给出 PowerShell 可复制示例。不要编造不存在的参数。"}],
+  "assertions": [
+    {"kind": "file_contains", "path": "README.md", "text": "--resume"},
+    {"kind": "file_contains", "path": "README.md", "text": "--session-db"},
+    {"kind": "file_not_contains", "path": "README.md", "text": "TODO"},
+    {"kind": "file_not_contains", "path": "README.md", "text": "--continue"}
+  ],
+  "capability_policy": {"discouraged": ["writable_subagent", "background_shell"]},
+  "quality": {"allowed_paths": ["README.md"], "max_changed_files": 1, "max_changed_lines": 100},
+  "tags": ["daily", "documentation", "cli"]
+}

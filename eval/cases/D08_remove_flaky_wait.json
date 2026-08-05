@@ -1,0 +1,22 @@
+{
+  "id": "D08",
+  "name": "消除后台等待中的不稳定轮询",
+  "category": "reliability",
+  "description": "用事件同步替换依赖固定 sleep 的后台任务等待实现。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/jobs.py", "content": "import threading\nimport time\n\nclass Job:\n    def __init__(self):\n        self.ready = False\n\n    def start(self):\n        def work():\n            self.ready = True\n        threading.Thread(target=work, daemon=True).start()\n\n    def wait_until_ready(self, timeout=1.0):\n        deadline = time.time() + timeout\n        while time.time() < deadline:\n            if self.ready:\n                return True\n            time.sleep(0.05)\n        return False\n"},
+    {"path": "tests/test_jobs.py", "content": "from src.jobs import Job\n\ndef test_job_becomes_ready():\n    job = Job()\n    job.start()\n    assert job.wait_until_ready(1.0)\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_jobs.py", "content": "import time\nfrom src.jobs import Job\n\ndef test_wait_does_not_poll_with_sleep(monkeypatch):\n    def forbidden_sleep(_):\n        raise AssertionError('polling sleep is not allowed')\n    monkeypatch.setattr(time, 'sleep', forbidden_sleep)\n    job = Job()\n    job.start()\n    assert job.wait_until_ready(1.0)\n\ndef test_timeout_is_respected():\n    job = Job()\n    assert job.wait_until_ready(0.01) is False\n"}
+  ],
+  "turns": [{"prompt": "jobs.py 的等待逻辑靠固定 sleep 轮询，在 CI 上偶尔慢且不稳定。请改成线程同步原语来等待完成，保留现有公开接口和超时语义，并让测试不再依赖碰运气的时间窗口。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_jobs.py"]},
+    {"kind": "file_not_contains", "path": "src/jobs.py", "text": "time.sleep"}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["src/jobs.py", "tests/**"], "max_changed_files": 3, "max_changed_lines": 140, "require_tests_changed": true, "max_function_lines": 50},
+  "tags": ["daily", "concurrency", "reliability", "hidden-tests"]
+}

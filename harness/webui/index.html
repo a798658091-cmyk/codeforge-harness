@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="CodeForge Harness 本地实时任务控制台" />
+    <title>CodeForge Live Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">CF</span>
+          <div><strong>CodeForge</strong><span>Local agent runtime</span></div>
+        </div>
+        <div class="topbar-status">
+          <span id="connectionDot" class="connection-dot"></span>
+          <span id="connectionText">正在连接</span>
+          <span id="statusPill" class="status-pill idle">空闲</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="command-panel surface">
+          <div class="command-heading">
+            <div><p class="eyebrow">TASK CONSOLE</p><h1>现在想让 Agent 做什么？</h1></div>
+            <p id="workspace" class="workspace"></p>
+          </div>
+          <form id="taskForm">
+            <label class="sr-only" for="prompt">任务内容</label>
+            <textarea id="prompt" rows="4" placeholder="例如：检查 src/config.py 的超时解析逻辑，修复空字符串问题并运行相关测试。" required></textarea>
+            <div class="command-actions">
+              <span class="hint">Ctrl + Enter 运行 · 本地自动审批</span>
+              <div class="button-row">
+                <button id="cancelButton" class="button ghost" type="button" disabled>停止</button>
+                <button id="runButton" class="button primary" type="submit">运行任务</button>
+              </div>
+            </div>
+          </form>
+          <p id="formError" class="form-error" role="alert"></p>
+        </section>
+
+        <section class="metrics" aria-label="运行指标">
+          <article class="metric surface accent-blue"><span>当前步骤 Token</span><strong id="stepTokens">0</strong><small id="stepTokenDetail">输入 0 · 输出 0</small></article>
+          <article class="metric surface accent-violet"><span>累计 Token</span><strong id="totalTokens">0</strong><small id="totalTokenDetail">输入 0 · 输出 0</small></article>
+          <article class="metric surface accent-green"><span>Agent 步骤</span><strong id="steps">0 / 24</strong><small id="compactions">上下文压缩 0 次</small></article>
+          <article class="metric surface accent-orange"><span>工具调用</span><strong id="toolCalls">0</strong><small id="toolFailures">失败 0 次</small></article>
+        </section>
+
+        <section class="workspace-grid">
+          <article class="surface card todo-card">
+            <div class="card-header"><div><p class="eyebrow">PLAN</p><h2>当前 Todo</h2></div><span id="todoCount" class="counter">0</span></div>
+            <div id="todoList" class="todo-list empty-state">Agent 制定计划后会显示在这里。</div>
+          </article>
+          <article class="surface card activity-card">
+            <div class="card-header"><div><p class="eyebrow">NOW</p><h2>当前操作</h2></div><span id="activityPulse" class="activity-pulse hidden"></span></div>
+            <div id="currentOperation" class="current-operation idle-operation">
+              <span class="operation-icon">···</span><div><strong>等待任务</strong><p>工具开始执行时会实时更新。</p></div>
+            </div>
+            <div class="progress-track" aria-hidden="true"><span id="stepProgress"></span></div>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="surface card answer-card">
+            <div class="card-header"><div><p class="eyebrow">RESULT</p><h2>Agent 回答</h2></div><button id="copyButton" class="text-button" type="button" disabled>复制</button></div>
+            <pre id="answer" class="answer empty-state">任务完成后，最终回答会显示在这里。</pre>
+            <pre id="error" class="error-output hidden"></pre>
+          </article>
+          <article class="surface card timeline-card">
+            <div class="card-header"><div><p class="eyebrow">TRACE</p><h2>操作时间线</h2></div><span id="sessionId" class="session-id">暂无会话</span></div>
+            <div id="timeline" class="timeline empty-state">文件、Shell、测试等操作会按完成时间排列。</div>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

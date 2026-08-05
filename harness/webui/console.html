@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="CodeForge Harness 本地实时任务控制台" />
+    <title>CodeForge Live</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="task-sidebar" aria-label="任务栏">
+        <div class="brand-row">
+          <span class="brand-mark" aria-hidden="true">CF</span>
+          <div><strong>CodeForge</strong><span>Harness</span></div>
+        </div>
+
+        <button id="newTaskButton" class="new-task" type="button">
+          <span aria-hidden="true">＋</span> 新建任务
+          <kbd>Ctrl K</kbd>
+        </button>
+
+        <div class="sidebar-section">
+          <p class="sidebar-label">任务</p>
+          <button id="currentTaskButton" class="task-item active" type="button">
+            <span class="task-icon" aria-hidden="true">›_</span>
+            <span class="task-copy">
+              <strong id="currentTaskTitle">新任务</strong>
+              <small id="currentTaskMeta">等待输入</small>
+            </span>
+          </button>
+        </div>
+
+        <div class="sidebar-bottom">
+          <div class="mini-stats">
+            <div><span>当前步骤</span><strong id="stepTokens">0</strong></div>
+            <div><span>累计 Token</span><strong id="totalTokens">0</strong></div>
+            <div><span>工具调用</span><strong id="toolCalls">0</strong></div>
+          </div>
+          <div class="connection-row">
+            <span id="connectionDot" class="connection-dot"></span>
+            <span id="connectionText">正在连接</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="session-pane">
+        <header class="session-header">
+          <div class="session-heading">
+            <span class="prompt-symbol" aria-hidden="true">›_</span>
+            <div>
+              <h1 id="sessionTitle">新任务</h1>
+              <p id="workspace" class="workspace"></p>
+            </div>
+          </div>
+          <div class="session-state">
+            <span id="sessionId" class="session-id">暂无会话</span>
+            <span id="statusPill" class="status-pill idle">空闲</span>
+          </div>
+        </header>
+
+        <div id="transcript" class="transcript" aria-live="polite">
+          <div class="transcript-inner">
+            <section id="welcomeBlock" class="welcome-block">
+              <p class="terminal-label">CODEFORGE LOCAL AGENT</p>
+              <h2>告诉 Harness 需要完成什么</h2>
+              <p>任务开始后，这里会按时间向下展示用户请求、Todo、模型阶段、工具调用和最终结果。</p>
+            </section>
+
+            <section id="userMessage" class="message user-message hidden">
+              <div class="message-rail"><span>YOU</span></div>
+              <div class="message-body"><pre id="userPrompt"></pre></div>
+            </section>
+
+            <section class="message agent-message">
+              <div class="message-rail"><span>PLAN</span></div>
+              <div class="message-body">
+                <div class="block-heading">
+                  <strong>当前 Todo</strong><span id="todoCount" class="count">0</span>
+                </div>
+                <div id="todoList" class="todo-list empty-state">Agent 制定计划后会显示在这里。</div>
+              </div>
+            </section>
+
+            <section class="message agent-message">
+              <div class="message-rail"><span>NOW</span></div>
+              <div class="message-body">
+                <div id="currentOperation" class="current-operation idle-operation">
+                  <span class="activity-glyph" aria-hidden="true">···</span>
+                  <div><strong>等待任务</strong><p>模型或工具开始工作时会实时更新。</p></div>
+                </div>
+                <div class="progress-track" aria-hidden="true"><span id="stepProgress"></span></div>
+                <div class="inline-metrics">
+                  <span id="stepTokenDetail">本步：输入 0 · 输出 0</span>
+                  <span id="totalTokenDetail">累计：输入 0 · 输出 0</span>
+                  <span id="steps">步骤 0 / 24</span>
+                  <span id="compactions">压缩 0 次</span>
+                  <span id="toolFailures">失败 0 次</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="message agent-message">
+              <div class="message-rail"><span>TRACE</span></div>
+              <div class="message-body">
+                <div class="block-heading"><strong>执行过程</strong><span>实时审计</span></div>
+                <div id="timeline" class="timeline empty-state">执行文件、Shell 或测试工具后会显示在这里。</div>
+              </div>
+            </section>
+
+            <section id="answerBlock" class="message agent-message hidden">
+              <div class="message-rail"><span>DONE</span></div>
+              <div class="message-body answer-body">
+                <div class="block-heading"><strong>Agent 回答</strong><button id="copyButton" class="text-button" type="button" disabled>复制</button></div>
+                <pre id="answer" class="answer"></pre>
+                <pre id="error" class="error-output hidden"></pre>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <footer class="composer-wrap">
+          <form id="taskForm" class="composer">
+            <label class="sr-only" for="prompt">任务内容</label>
+            <textarea id="prompt" rows="2" placeholder="例如：创建 hello.txt，内容只写“Hello CodeForge”，读取一次确认后结束。" required></textarea>
+            <div class="composer-actions">
+              <span class="hint">Ctrl + Enter 运行 · 本地自动审批</span>
+              <p id="formError" class="form-error" role="alert"></p>
+              <button id="cancelButton" class="icon-button cancel" type="button" disabled title="停止任务">■</button>
+              <button id="runButton" class="icon-button run" type="submit" title="运行任务">↑</button>
+            </div>
+          </form>
+        </footer>
+      </main>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

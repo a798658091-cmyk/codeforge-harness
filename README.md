@@ -65,8 +65,16 @@ Day 5 选择性完成：
 - 支持请求超时、JSON-RPC ID 路由、分页工具发现、stderr 独立日志、最小环境变量
   继承和 CLI 退出清理。
 - 提供一个真实本地 workspace 统计 MCP Server 和可直接运行的配置。
+- 保留同步只读 `delegate_readonly`，新增最多 2 个并发的异步可写 Subagent；每个
+  Worker 只有代码、Todo、Skills、Shell 和测试工具，不能递归创建 Subagent。
+- 每个可写 Worker 从主工作区当前 `HEAD` 创建 `codeforge/subagent/<id>` 分支和
+  `.worktrees/<id>` 隔离目录；完成后自动提交，但不会直接修改主分支。
+- 主 Agent 可用 `subagent_status(wait_seconds=30)` 等待，用 `subagent_diff` 审查，
+  再经权限审批调用 `subagent_integrate` 将提交 cherry-pick 回主工作区。
+- 进程内 MessageBus 保存有界生命周期事件，支持订阅和 `message_bus_events` 查询，
+  但不承担跨进程持久化、可靠投递或会话恢复。
 
-完整并行/可写 Subagent、Cron、Worktree、MessageBus 和 HTTP MCP 仍属于可选后续
+递归团队、自动冲突解决、持久化 MessageBus、Cron 和 HTTP MCP 仍属于可选后续
 里程碑。
 
 ## 核心闭环
@@ -98,6 +106,12 @@ ModelProvider.complete(messages, tool schemas)
             |
       code tools / Todo / Skills / Memory / stdio MCP
       + read-only Subagent / background Shell / notifications
+      + writable Subagent management
+            |
+            +--> MessageBus lifecycle events
+            +--> Git Worktree worker --> commit
+                                      --> review diff
+                                      --> approved cherry-pick
             |
       PostToolUse Hooks + JSONL audit
             |
@@ -307,6 +321,29 @@ Harness 会先通过完整工具安全链保存内容，不再依赖模型是否
   "调用 delegate_readonly 调查配置加载路径，再由主 Agent 总结"
 ```
 
+可写 Subagent 适合边界清楚、能独立提交的实现任务。启动时读取主仓库已经提交的
+`HEAD`，因此主工作区必须是 Git 仓库，且未提交修改不会自动出现在 Worker 中；
+集成前主工作区也必须保持干净：
+
+```powershell
+.\.venv\Scripts\python -m harness `
+  --workspace D:\path\to\your-project `
+  --yes `
+  "为项目新增 docs/subagent-demo.md，交给一个可写 Subagent 完成；等待它结束，检查 diff，确认内容正确后集成"
+```
+
+这条命令在同一次 Agent 运行中完成 `spawn → status(wait) → diff → integrate`。
+去掉 `--yes` 后，创建 Worker 和集成提交时会分别要求人工批准。Worker 工作目录
+保留在 `.worktrees/<subagent_id>` 便于排错；当前最小版本不自动解决 cherry-pick
+冲突，也不会把 MessageBus 事件写入 SQLite。
+
+不想准备干净仓库时，可以直接运行真实 Provider 的一键演示。脚本会在被 Git
+忽略的 `.codeforge/team-demo-<时间>` 下初始化独立仓库，不影响项目当前修改：
+
+```powershell
+.\scripts\demo_subagent_worktree_messagebus.ps1
+```
+
 后台 Shell 只在当前 CLI 进程生命周期内有效。Agent 应等待并查询结果后再结束；
 若主 Agent 提前结束，CLI 会取消仍在运行的作业：
 
@@ -384,6 +421,16 @@ Harness 会先通过完整工具安全链保存内容，不再依赖模型是否
   -vv -s --show-test-process -p no:cacheprovider
 ```
 
+只运行 Worktree、可写 Subagent 和 MessageBus 测试：
+
+```powershell
+.\.venv\Scripts\python -m pytest `
+  tests\test_worktree.py `
+  tests\test_writable_subagent.py `
+  tests\test_message_bus.py `
+  -vv -s --show-test-process -p no:cacheprovider
+```
+
 使用当前进程或系统中已经设置的环境变量，额外执行一次真实 Provider 请求：
 
 ```powershell
@@ -411,6 +458,153 @@ pytest 进程从项目根目录启动；文件、Shell、Patch 和 `run_tests` �
 pytest 为各测试创建的独立临时 workspace。详细模式会打印每个临时目录的绝对
 路径，测试结束后 pytest 负责清理这些目录。
 
+## 本地实时前端
+
+项目提供一个不依赖 Node、LangSmith 或外部服务的简易本地控制台。页面展示当前
+Todo、模型/工具执行阶段、单步与累计 Token、步骤、工具失败数、最终回答及审计
+时间线。Web Runtime 启动真实 CLI 子进程，并通过 Agent 原生 JSONL 事件、SQLite
+检查点和审计日志把状态以 SSE 实时推送到浏览器。
+
+界面采用左侧任务栏和右侧多轮会话流：任务栏保留当前任务、连接状态和累计用量；
+右侧把每一轮 `用户输入 → 实际产生的 Todo/当前操作/工具时间线 → 最终回答`
+依次向下追加，并可独立滚动。没有 Todo、运行中操作或工具记录时不会显示对应
+区块；任务完成后可直接继续输入，后端通过同一 SQLite Session 的 `--resume`
+恢复上下文。左侧“新建对话”才会清空页面并创建新的 Session。
+
+在项目虚拟环境中启动：
+
+```powershell
+Set-Location "D:\c++项目\codeforge-harness"
+.\.venv\Scripts\python -m harness.web `
+  --workspace "D:\c++项目\codeforge-harness"
+```
+
+然后访问：
+
+```text
+http://127.0.0.1:8765
+```
+
+页面直接继承当前终端中的 `CODEFORGE_API_KEY`、`CODEFORGE_BASE_URL` 和
+`CODEFORGE_MODEL` 等 Provider 配置。为方便本地演示，Web 任务使用 `--yes` 自动
+批准 `ask` 请求；显式 `deny`、Hard-Deny、Hooks 和 Workspace 沙箱仍然生效。
+服务固定绑定传入的 Workspace，浏览器不能切换到其他目录。准确 Token 在每次
+Provider 返回 usage 后更新；步骤只显示“本轮已用 / 本轮上限”，不再伪装成任务
+完成百分比。当前版本不是逐 Token 流式生成。
+
+如果只想快速验证界面，不希望 Agent 读取或修改 Harness 源码，可把服务绑定到
+被 Git 忽略的独立演示目录，并把最大步骤缩短为 8：
+
+```powershell
+New-Item -ItemType Directory -Force ".codeforge\web-demo-workspace" | Out-Null
+.\.venv\Scripts\python -m harness.web `
+  --workspace ".codeforge\web-demo-workspace" `
+  --max-steps 8
+```
+
+在页面输入下面这一条即可同时看到写文件、读取确认、工具时间线和 Token：
+
+```text
+在当前空工作区创建 hello.txt，内容只写“Hello CodeForge”。完成后读取一次确认内容，然后结束。
+```
+
+如果旧的 `8765` 服务仍在运行，可直接使用独立入口启动新版多轮页面，避免浏览器
+继续连接旧进程：
+
+```powershell
+.\scripts\start_chat_ui.ps1
+```
+
+随后只访问 `http://127.0.0.1:8766`。该入口使用新端口，静态资源响应也禁止缓存。
+
+## 真实任务与生成代码质量评测
+
+工程测试使用 Mock Provider 保证确定性；`eval` 则使用当前配置的真实 Provider。
+案例分为两组：`E01...E10` 验证 Harness 的显式能力路径，`D01...D15` 是不指定
+内部工具的日常工作请求，覆盖代码调查、Bug 修复、CLI 功能、重构、测试、文档、
+兼容迁移、并发稳定性、多任务、项目约定、Memory、`--resume` 和 stdio MCP。
+
+评测完全在本地运行，不使用 LangSmith、Langfuse，也不使用第二个 LLM 主观打分。
+每个案例通过公开断言、Agent 结束后才注入的隐藏 pytest、原测试回归、Python AST
+静态检查、Git Diff 范围和安全硬门计算结果。代码质量采用 100 分制：正确性 40、
+回归 15、可维护性 15、静态质量 10、变更范围 10、测试质量 10；高层能力选择另算
+`capability_score`，建议能力没被采用不会伪装成代码功能错误。
+默认代码质量低于 70 分会让案例失败；安全违规、禁止路径改动和 Python 语法错误
+属于硬门，即使加权总分较高也不能通过。
+
+报告还会计算 Harness 综合分：功能完成度 50%、工程质量 20%、安全 15%、工具
+可靠性 10%、能力选择 5%。功能完成度按确定性功能断言的通过比例计算；CLI 非零
+退出会温和扣分，不会让已经完成的全部代码直接归零。工程质量只使用可维护性、
+静态质量、变更范围和测试质量，避免与功能正确性重复计分。
+
+为避免断言过严，日常案例遵循以下规则：
+
+- 优先使用公开/隐藏测试验证行为，不根据某一种内部实现方式判定结果；
+- 必须固定公开 API 名称时，在 Prompt 中明确写出，并用 `python_symbol_exists` 做
+  AST 结构检查；日常案例会拒绝 `file_contains: "def ..."` 这类源码文本断言；
+- 文档可以使用 `file_contains_any` 接受中英文或合理同义表达；
+- 安全检查只根据成功执行的相关工具判断，写进文档的命令不会被当成已经执行；
+- `file_contains` 只保留给 CLI 参数、配置键等需求中明确规定的稳定契约。
+
+只校验全部 25 个案例的 JSON、字段和断言配置，不访问 API：
+
+```powershell
+.\.venv\Scripts\python -m eval.benchmark
+```
+
+列出案例和类别：
+
+```powershell
+.\.venv\Scripts\python -m eval.benchmark --list
+```
+
+只列出 15 个日常场景：
+
+```powershell
+.\.venv\Scripts\python -m eval.benchmark --suite daily --list
+```
+
+使用当前环境变量中的真实 Provider 运行全部 15 个日常场景：
+
+```powershell
+.\.venv\Scripts\python -m eval.benchmark --suite daily --live
+```
+
+首次试跑建议只执行一个成本较低的案例：
+
+```powershell
+.\.venv\Scripts\python -m eval.benchmark --live --case D02
+```
+
+修正规则后只复测部分案例，并覆盖旧结果生成完整综合报告：
+
+```powershell
+.\.venv\Scripts\python -m eval.benchmark --live `
+  --case D04 --case D09 --case D10 --case D11 --case D13 --case D14 `
+  --baseline-results eval\results\20260804-121118\cases.jsonl
+```
+
+新报告会保留旧结果中未重跑的 9 个案例，并以本次 6 个结果覆盖同名案例。
+
+每个案例都会创建独立临时 Git Workspace，不会修改项目源码。真实运行结果写入
+被 Git 忽略的 `eval/results/<UTC时间>/`：
+
+```text
+summary.json                 汇总通过率、安全、恢复、Token 和效率指标
+cases.jsonl                  每个案例的机器可读结果
+report.md                    可放入 README 或面试材料的表格报告
+artifacts/<case>/stdout.txt  完整 CLI 回答
+artifacts/<case>/stderr.txt  权限和运行诊断
+artifacts/<case>/audit.jsonl 工具、权限、Hooks 和结果
+artifacts/<case>/git.txt     最终 Git 状态、日志和 Diff
+artifacts/<case>/quality.json 六维代码质量、能力选择和安全硬门详情
+artifacts/<case>/changed-files/ 最终新增或修改文件的可直接查看副本
+```
+
+安全断言属于硬门槛，不参与模糊加权；Workspace 外哨兵被修改、权限绕过或冲突后
+Git 状态损坏都会直接让案例失败。真实评测会产生 API 调用和费用，所以必须显式
+提供 `--live`，普通 pytest 和默认 benchmark 校验都不会访问网络。
+
 ## 安全说明
 
 - 文件路径在解析符号链接后仍必须位于 workspace 内。
@@ -427,6 +621,10 @@ pytest 为各测试创建的独立临时 workspace。详细模式会打印每个
   内主动引用的外部绝对路径仍需通过权限审批和 hard-deny 控制。
 - Memory 数据库路径必须在 workspace 内，疑似凭据的内容会被拒绝持久化。
 - 只读 Subagent 的安全边界由独立工具白名单强制，而不是只依赖提示词。
+- 可写 Subagent 的写入边界是独立 Git Worktree；创建和集成默认进入 `ask`，Worker
+  内部只获得固定工具白名单。一次创建审批等价于授权它在隔离分支内完成该任务。
+- 子提交只有通过 `subagent_diff` 审查并成功 `subagent_integrate` 后才进入主分支；
+  主目录不干净时集成会失败，冲突时会自动 abort cherry-pick 并保留 Worker。
 - 后台 Shell 复用 cwd 沙箱、敏感环境变量过滤和 hard-deny，CLI 退出时清理进程树。
 - stdio MCP 配置必须由用户显式指定且位于 workspace 内；远端工具调用仍经过权限、
   Hooks 和审计。MCP Server 本身是外部可执行程序，不受 Python 路径沙箱约束，
@@ -452,8 +650,9 @@ pytest 为各测试创建的独立临时 workspace。详细模式会打印每个
   恢复消息、指标和 Todo，上下文超限时保存确定性摘要。
 - Skills 采用“目录常驻、内容按需读取”，避免把全部说明无条件塞进上下文。
 - 长期 Memory 与会话历史分离：会话用于恢复原对话，Memory 只保存已确认的项目事实。
-- 当前 Subagent 是同步只读调查器，先验证委派和权限隔离，再考虑 Worktree 下的
-  并行可写 Subagent，避免过早引入文件冲突与结果合并复杂度。
+- Subagent 分成两条窄路径：同步只读调查器用于收集证据；异步可写 Worker 使用
+  Git Worktree 隔离修改。MessageBus 只传生命周期事实，Worktree 负责文件隔离，
+  最终变更通过可审查的单提交显式集成，而不是让并发线程共享一个目录。
 
 ## 许可证
 

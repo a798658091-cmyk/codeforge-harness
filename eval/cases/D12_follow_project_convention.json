@@ -1,0 +1,23 @@
+{
+  "id": "D12",
+  "name": "遵循项目内开发约定",
+  "category": "conventions",
+  "description": "让 Agent 自主发现项目说明包并按约定实现健康检查。",
+  "suite": "daily",
+  "files": [
+    {"path": "skills/cli-standard/SKILL.md", "content": "---\nname: cli-standard\ndescription: Conventions for commands and health checks in this project.\n---\n# CLI standard\n\nWhen adding a health check, name the public function `check_health`. It must return a dictionary with exactly `status` and `service` keys. Use `status='ok'` and `service='codeforge-demo'`. Public functions require a concise docstring.\n"},
+    {"path": "src/health.py", "content": "\"\"\"Service health helpers.\"\"\"\n"},
+    {"path": "README.md", "content": "# Service\n\nProject-specific development conventions are available in the repository.\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_health.py", "content": "from src.health import check_health\n\ndef test_project_health_contract():\n    assert check_health() == {'status': 'ok', 'service': 'codeforge-demo'}\n    assert check_health.__doc__\n"}
+  ],
+  "turns": [{"prompt": "请按照这个仓库已有的开发约定，在 health 模块补上服务健康检查，并确认实现符合项目约定。不要另起一套命名或返回格式。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["hidden/test_hidden_health.py"]},
+    {"kind": "file_contains", "path": "src/health.py", "text": "check_health"}
+  ],
+  "capability_policy": {"preferred": ["skills", "tests"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["src/health.py", "tests/**"], "max_changed_files": 2, "max_changed_lines": 80},
+  "tags": ["daily", "conventions", "skills-candidate"]
+}

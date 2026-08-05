@@ -21,21 +21,26 @@ from harness.context.memory import (
     extract_explicit_memory_intents,
 )
 from harness.context.skills import SkillRegistry
+from harness.delegation.message_bus import MessageBus
 from harness.delegation.subagent import ReadonlySubagentRunner
+from harness.delegation.team import WritableSubagentManager
 from harness.mcp_stdio import (
     MCPError,
     StdioMCPManager,
     load_mcp_config,
 )
 from harness.providers.openai_compatible import OpenAICompatibleProvider
+from harness.runtime_events import RuntimeEventLogger
 from harness.safety.audit import AuditLogger
 from harness.safety.permissions import PermissionPolicy, PermissionRequest
+from harness.safety.workspace import Workspace
 from harness.storage.sqlite import SQLiteSessionStore, SessionNotFoundError
 from harness.tasks.background import BackgroundJobManager
 from harness.tasks.notifications import NotificationCenter
 from harness.tasks.todo import TodoList
 from harness.tools import build_default_registry
 from harness.tools.registry import ToolRegistry
+from harness.worktrees import WorktreeError, WorktreeManager
 
 
 def _approve_tool_call(request: PermissionRequest) -> bool:
@@ -113,6 +118,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="disable JSONL tool audit logging",
     )
+    parser.add_argument(
+        "--runtime-event-log",
+        help="workspace-relative JSONL event stream for a local dashboard",
+    )
     session_group = parser.add_mutually_exclusive_group()
     session_group.add_argument(
         "--resume",
@@ -169,6 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="default maximum steps for the read-only subagent",
     )
     parser.add_argument(
+        "--max-subagents",
+        type=int,
+        default=2,
+        choices=range(1, 5),
+        metavar="1..4",
+        help="maximum concurrent writable subagents (default: 2)",
+    )
+    parser.add_argument(
         "--mcp-config",
         help=(
             "workspace-relative JSON config for explicitly trusted stdio "
@@ -201,6 +218,8 @@ def main(argv: list[str] | None = None) -> int:
     background_manager: BackgroundJobManager | None = None
     notification_center: NotificationCenter | None = None
     mcp_manager: StdioMCPManager | None = None
+    writable_subagents: WritableSubagentManager | None = None
+    message_bus: MessageBus | None = None
     captured_memory_keys: list[str] = []
     try:
         settings = Settings.from_env(
@@ -271,6 +290,13 @@ def main(argv: list[str] | None = None) -> int:
             if settings.audit_log is not None
             else None
         )
+        runtime_event_logger = (
+            RuntimeEventLogger(
+                Workspace(settings.workspace).resolve(args.runtime_event_log)
+            )
+            if args.runtime_event_log
+            else None
+        )
         notification_center = NotificationCenter()
         background_manager = BackgroundJobManager(
             settings.workspace,
@@ -291,6 +317,25 @@ def main(argv: list[str] | None = None) -> int:
             audit_logger=audit_logger,
             default_max_steps=settings.subagent_max_steps,
         )
+        message_bus = MessageBus()
+        try:
+            worktree_manager = WorktreeManager(settings.workspace)
+        except WorktreeError as exc:
+            # 非 Git 目录仍可使用全部原有能力，只禁用依赖分支隔离的可写 Worker。
+            worktree_manager = None
+            print(
+                f"[subagent:writable-disabled] {exc}",
+                file=sys.stderr,
+            )
+        if worktree_manager is not None:
+            writable_subagents = WritableSubagentManager(
+                provider=provider,
+                workspace=settings.workspace,
+                worktrees=worktree_manager,
+                message_bus=message_bus,
+                audit_logger=audit_logger,
+                max_workers=args.max_subagents,
+            )
         mcp_tools = []
         if args.mcp_config:
             mcp_manager = StdioMCPManager(
@@ -309,6 +354,8 @@ def main(argv: list[str] | None = None) -> int:
             skill_registry=skill_registry,
             memory_store=memory_store,
             subagent_runner=subagent_runner,
+            writable_subagents=writable_subagents,
+            message_bus=message_bus,
             background_manager=background_manager,
             notification_center=notification_center,
         )
@@ -357,11 +404,17 @@ def main(argv: list[str] | None = None) -> int:
                 if store is not None and session_id is not None
                 else None
             ),
+            event_callback=(
+                runtime_event_logger.emit
+                if runtime_event_logger is not None
+                else None
+            ),
         )
         try:
             result = loop.run(prompt, initial_state=initial_state)
         finally:
             # Provider 或模型循环出现未预料异常时也不能遗留后台进程。
+            _shutdown_subagents(writable_subagents)
             _shutdown_background(background_manager)
             _shutdown_mcp(mcp_manager)
     except (
@@ -372,18 +425,21 @@ def main(argv: list[str] | None = None) -> int:
         FileNotFoundError,
         MCPError,
     ) as exc:
+        _shutdown_subagents(writable_subagents)
         _shutdown_background(background_manager)
         _shutdown_mcp(mcp_manager)
         _print_notifications(notification_center)
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
     except AgentLoopLimitError as exc:
+        _shutdown_subagents(writable_subagents)
         _shutdown_background(background_manager)
         _shutdown_mcp(mcp_manager)
         _print_notifications(notification_center)
         print(f"agent stopped: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
+        _shutdown_subagents(writable_subagents)
         _shutdown_background(background_manager)
         _shutdown_mcp(mcp_manager)
         _print_notifications(notification_center)
@@ -391,10 +447,12 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except Exception:
         # 未知缺陷仍向上暴露，但必须先清理当前进程拥有的所有子进程。
+        _shutdown_subagents(writable_subagents)
         _shutdown_background(background_manager)
         _shutdown_mcp(mcp_manager)
         raise
 
+    _shutdown_subagents(writable_subagents)
     _shutdown_background(background_manager)
     _shutdown_mcp(mcp_manager)
     print(result.answer)
@@ -413,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[compactions={result.state.compactions}]")
     if captured_memory_keys:
         print(f"[memory-saved={', '.join(captured_memory_keys)}]")
+    _print_subagents(writable_subagents)
     _print_background_jobs(background_manager)
     _print_notifications(notification_center)
     return 0
@@ -422,6 +481,15 @@ def _shutdown_background(
     manager: BackgroundJobManager | None,
 ) -> None:
     """在所有 CLI 退出路径终止仍在运行的后台作业。"""
+
+    if manager is not None:
+        manager.shutdown(cancel_running=True)
+
+
+def _shutdown_subagents(
+    manager: WritableSubagentManager | None,
+) -> None:
+    """在 CLI 退出路径协作取消仍在运行的 Worker 并回收线程。"""
 
     if manager is not None:
         manager.shutdown(cancel_running=True)
@@ -519,6 +587,22 @@ def _print_background_jobs(manager: BackgroundJobManager | None) -> None:
         print(
             f"- {job.id}: {job.status.value}, "
             f"return_code={job.return_code}, log={relative_log}"
+        )
+
+
+def _print_subagents(manager: WritableSubagentManager | None) -> None:
+    """在最终结果后展示本轮可写 Worker 的状态、分支和提交。"""
+
+    if manager is None:
+        return
+    tasks = manager.list()
+    if not tasks:
+        return
+    print("[subagents]")
+    for task in tasks:
+        print(
+            f"- {task.id}: {task.status.value}, branch={task.branch}, "
+            f"commit={task.commit or '-'}"
         )
 
 

@@ -18,10 +18,18 @@ from harness.providers.base import AssistantTurn, ModelProvider
 from harness.tools.registry import ToolRegistry
 
 CheckpointCallback = Callable[[AgentState, str], None]
+CancelCheck = Callable[[], bool]
+RuntimeEventCallback = Callable[[str, dict[str, Any]], None]
 
 
 class AgentLoopLimitError(RuntimeError):
     """Agent 执行轮数超过配置上限时抛出的异常。"""
+
+    pass
+
+
+class AgentLoopCancelledError(RuntimeError):
+    """外部协作任务请求取消时，用于安全结束当前 Agent Loop。"""
 
     pass
 
@@ -46,6 +54,8 @@ class AgentLoop:
         max_steps: int = 20,
         compactor: ContextCompactor | None = None,
         checkpoint_callback: CheckpointCallback | None = None,
+        cancel_check: CancelCheck | None = None,
+        event_callback: RuntimeEventCallback | None = None,
     ) -> None:
         """注入 Provider、工具、安全上下文、压缩器和检查点回调。"""
 
@@ -57,6 +67,8 @@ class AgentLoop:
         self.max_steps = max_steps
         self.compactor = compactor
         self.checkpoint_callback = checkpoint_callback
+        self.cancel_check = cancel_check
+        self.event_callback = event_callback
 
     def run(
         self,
@@ -92,23 +104,42 @@ class AgentLoop:
             {"type": "message", "message": {"role": "user", "content": prompt}},
         )
         self._checkpoint(state, "user_message")
+        self._emit("run.started", {"steps": state.steps})
 
         for _ in range(self.max_steps):
+            self._raise_if_cancelled()
             self._compact_if_needed(state)
             reduce_state(state, {"type": "step"})
+            self._emit("model.started", {"step": state.steps})
             turn = self.provider.complete(
                 state.messages,
                 self.registry.schemas(),
             )
+            self._raise_if_cancelled()
             reduce_state(state, {"type": "usage", "usage": turn.usage})
+            self._emit(
+                "model.completed",
+                {
+                    "step": state.steps,
+                    "usage": turn.usage,
+                    "prompt_tokens": state.prompt_tokens,
+                    "completion_tokens": state.completion_tokens,
+                },
+            )
             self._append_assistant_turn(state, turn)
             self._checkpoint(state, "assistant_turn")
 
             if not turn.tool_calls:
                 self._checkpoint(state, "completed")
+                self._emit("run.completed", {"steps": state.steps})
                 return AgentRunResult(answer=turn.content, state=state)
 
             for call in turn.tool_calls:
+                self._raise_if_cancelled()
+                self._emit(
+                    "tool.started",
+                    {"step": state.steps, "tool": call.name, "call_id": call.id},
+                )
                 result = self.registry.dispatch(call.name, call.arguments)
                 reduce_state(
                     state,
@@ -133,12 +164,31 @@ class AgentLoop:
                     },
                 )
                 self._sync_todos_to_state(state)
+                self._emit(
+                    "tool.completed",
+                    {
+                        "step": state.steps,
+                        "tool": call.name,
+                        "call_id": call.id,
+                        "success": result.success,
+                        "duration_ms": result.duration_ms,
+                        "error_type": result.error_type,
+                    },
+                )
+                self._emit("todos.updated", {"todos": state.todos})
                 self._checkpoint(state, "tool_result")
 
         self._checkpoint(state, "step_limit")
+        self._emit("run.failed", {"reason": "step_limit"})
         raise AgentLoopLimitError(
             f"agent exceeded max_steps={self.max_steps}"
         )
+
+    def _raise_if_cancelled(self) -> None:
+        """在模型回合和工具调用边界响应外部的协作取消信号。"""
+
+        if self.cancel_check is not None and self.cancel_check():
+            raise AgentLoopCancelledError("agent run was cancelled")
 
     @staticmethod
     def _append_assistant_turn(
@@ -184,6 +234,20 @@ class AgentLoop:
             {"type": "compaction", "messages": result.messages},
         )
         self._checkpoint(state, "context_compacted")
+        self._emit(
+            "context.compacted",
+            {"compactions": state.compactions},
+        )
+
+    def _emit(self, event_type: str, payload: dict[str, Any]) -> None:
+        """向可选观测回调发送事件，并隔离前端日志异常。"""
+
+        if self.event_callback is None:
+            return
+        try:
+            self.event_callback(event_type, payload)
+        except Exception:
+            return
 
     def _restore_or_initialize_todos(
         self,

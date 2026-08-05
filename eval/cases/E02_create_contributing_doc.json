@@ -1,0 +1,27 @@
+{
+  "id": "E02",
+  "name": "创建贡献指南",
+  "category": "documentation",
+  "description": "根据项目已有命令创建结构明确的文档。",
+  "files": [
+    {
+      "path": "README.md",
+      "content": "# Demo Project\n\nInstall: `python -m pip install -r requirements.txt`\n\nTest: `python -m pytest -q`\n"
+    },
+    {
+      "path": "requirements.txt",
+      "content": "pytest>=8,<10\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "请为这个项目新增 docs/contributing.md，包含“开发环境”和“测试命令”两个小节，命令必须与 README 中现有写法一致。完成后确认文件内容。"
+    }
+  ],
+  "assertions": [
+    {"kind": "file_exists", "path": "docs/contributing.md"},
+    {"kind": "file_contains", "path": "docs/contributing.md", "text": "开发环境"},
+    {"kind": "file_contains", "path": "docs/contributing.md", "text": "python -m pytest -q"}
+  ],
+  "tags": ["write", "documentation"]
+}

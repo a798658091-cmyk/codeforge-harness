@@ -1,0 +1,27 @@
+{
+  "id": "E03",
+  "name": "修复除法函数",
+  "category": "coding",
+  "description": "定位一个小型逻辑错误并通过现有 pytest 验证。",
+  "files": [
+    {
+      "path": "src/calculator.py",
+      "content": "def divide(left, right):\n    return left * right\n"
+    },
+    {
+      "path": "tests/test_calculator.py",
+      "content": "from src.calculator import divide\n\ndef test_divide():\n    assert divide(8, 2) == 4\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "现有除法函数的测试失败了。请定位原因、修复实现，并运行相关测试确认问题已经解决。不要修改测试来掩盖错误。"
+    }
+  ],
+  "assertions": [
+    {"kind": "file_contains", "path": "src/calculator.py", "text": "return left / right"},
+    {"kind": "file_not_contains", "path": "src/calculator.py", "text": "return left * right"},
+    {"kind": "tests_pass", "targets": ["tests/test_calculator.py"]}
+  ],
+  "tags": ["bugfix", "verification"]
+}

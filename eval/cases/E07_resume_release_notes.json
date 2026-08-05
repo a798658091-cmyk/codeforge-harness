@@ -1,0 +1,28 @@
+{
+  "id": "E07",
+  "name": "恢复会话继续文档任务",
+  "category": "session_resume",
+  "description": "第一轮留下待办，第二轮通过同一 Session Checkpoint 继续并完成。",
+  "files": [
+    {
+      "path": "README.md",
+      "content": "# Widget\n\nCurrent version supports Windows and Linux.\n"
+    }
+  ],
+  "turns": [
+    {
+      "prompt": "请开始编写 release-notes.md：先写标题和“已完成：收集版本信息”，并用 Todo 记录下一步还需要补充兼容性说明和最终检查。本轮只完成这个准备阶段。"
+    },
+    {
+      "prompt": "继续刚才的任务。请先查看已有 Todo 和文件，再补充 Windows、Linux 兼容性说明，完成最终检查，并把所有 Todo 更新为完成。",
+      "resume_previous": true
+    }
+  ],
+  "assertions": [
+    {"kind": "file_exists", "path": "release-notes.md"},
+    {"kind": "file_contains", "path": "release-notes.md", "text": "Windows"},
+    {"kind": "file_contains", "path": "release-notes.md", "text": "Linux"},
+    {"kind": "todo_all_completed"}
+  ],
+  "tags": ["resume", "todo", "multi_turn"]
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="CodeForge Harness 多轮本地会话" />
+    <title>CodeForge Chat</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="taskbar" aria-label="任务栏">
+        <div class="brand">
+          <span class="brand-logo">CF</span>
+          <div><strong>CodeForge</strong><small>Local Harness</small></div>
+        </div>
+        <button id="newTaskButton" class="new-task" type="button">
+          <span>＋</span> 新建对话 <kbd>Ctrl K</kbd>
+        </button>
+        <div class="task-list">
+          <p>当前任务</p>
+          <button id="currentTaskButton" class="task-entry active" type="button">
+            <span class="terminal-icon">›_</span>
+            <span><strong id="currentTaskTitle">新对话</strong><small id="currentTaskMeta">等待输入</small></span>
+          </button>
+        </div>
+        <div class="taskbar-footer">
+          <dl>
+            <div><dt>本步 Token</dt><dd id="stepTokens">0</dd></div>
+            <div><dt>累计 Token</dt><dd id="totalTokens">0</dd></div>
+            <div><dt>累计工具</dt><dd id="toolCalls">0</dd></div>
+          </dl>
+          <p class="connection"><span id="connectionDot"></span><span id="connectionText">正在连接</span></p>
+        </div>
+      </aside>
+
+      <main class="chat-pane">
+        <header class="chat-header">
+          <div class="chat-title"><span>›_</span><div><h1 id="sessionTitle">新对话</h1><p id="workspace"></p></div></div>
+          <div class="chat-status"><span id="sessionId">暂无会话</span><strong id="statusPill" class="idle">空闲</strong></div>
+        </header>
+
+        <div id="transcript" class="transcript">
+          <div id="conversation" class="conversation"></div>
+        </div>
+
+        <footer class="composer-area">
+          <form id="taskForm" class="composer">
+            <label class="sr-only" for="prompt">继续输入任务</label>
+            <textarea id="prompt" rows="2" placeholder="输入要求；完成后可以继续追问或修改……" required></textarea>
+            <div class="composer-row">
+              <span>Ctrl + Enter 发送 · 同一会话会保留上下文</span>
+              <p id="formError" role="alert"></p>
+              <button id="cancelButton" class="stop-button" type="button" disabled title="停止">■</button>
+              <button id="runButton" class="send-button" type="submit" title="发送">↑</button>
+            </div>
+          </form>
+        </footer>
+      </main>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

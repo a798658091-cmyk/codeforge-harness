@@ -1,0 +1,22 @@
+{
+  "id": "D07",
+  "name": "兼容旧配置键迁移",
+  "category": "compatibility",
+  "description": "将旧配置键平滑迁移到新名称，同时处理冲突和默认值。",
+  "suite": "daily",
+  "files": [
+    {"path": "src/settings.py", "content": "DEFAULT_TIMEOUT = 30\n\ndef request_timeout(config):\n    return int(config.get('timeout', DEFAULT_TIMEOUT))\n"},
+    {"path": "tests/test_settings.py", "content": "from src.settings import request_timeout\n\ndef test_old_key():\n    assert request_timeout({'timeout': '12'}) == 12\n\ndef test_default():\n    assert request_timeout({}) == 30\n"}
+  ],
+  "hidden_files": [
+    {"path": "test_hidden_settings.py", "content": "from src.settings import request_timeout\n\ndef test_new_key():\n    assert request_timeout({'request_timeout': '15'}) == 15\n\ndef test_new_key_wins_conflict():\n    assert request_timeout({'timeout': '12', 'request_timeout': '18'}) == 18\n\ndef test_old_key_remains_supported():\n    assert request_timeout({'timeout': 9}) == 9\n"}
+  ],
+  "turns": [{"prompt": "配置项 timeout 准备改名为 request_timeout。请让代码优先读取新键，同时继续兼容旧键，两个都存在时以新键为准，默认值保持 30；补好验证，但不要破坏旧用户。"}],
+  "assertions": [
+    {"kind": "tests_pass", "targets": ["tests", "hidden/test_hidden_settings.py"]},
+    {"kind": "file_contains", "path": "src/settings.py", "text": "request_timeout"}
+  ],
+  "capability_policy": {"preferred": ["tests"], "discouraged": ["writable_subagent"]},
+  "quality": {"allowed_paths": ["src/settings.py", "tests/**"], "max_changed_files": 3, "max_changed_lines": 100, "require_tests_changed": true},
+  "tags": ["daily", "compatibility", "configuration"]
+}

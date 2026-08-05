@@ -54,7 +54,9 @@ from harness.tools.shell import ShellTool
 from harness.tools.testing import RunTestsTool
 
 if TYPE_CHECKING:
+    from harness.delegation.message_bus import MessageBus
     from harness.delegation.subagent import ReadonlySubagentRunner
+    from harness.delegation.team import WritableSubagentManager
 
 
 def build_default_registry(
@@ -68,13 +70,24 @@ def build_default_registry(
     skill_registry: SkillRegistry | None = None,
     memory_store: MemoryStore | None = None,
     subagent_runner: ReadonlySubagentRunner | None = None,
+    writable_subagents: WritableSubagentManager | None = None,
+    message_bus: MessageBus | None = None,
     background_manager: BackgroundJobManager | None = None,
     notification_center: NotificationCenter | None = None,
 ) -> ToolRegistry:
     """为 workspace 创建带可选安全组件的默认工具注册表。"""
 
     # 延迟导入避免 AgentLoop → tools.registry → tools → Subagent → AgentLoop 循环。
+    from harness.delegation.message_bus import MessageBusEventsTool
     from harness.delegation.subagent import DelegateReadonlyTool
+    from harness.delegation.team import (
+        SubagentCancelTool,
+        SubagentDiffTool,
+        SubagentIntegrateTool,
+        SubagentListTool,
+        SubagentSpawnTool,
+        SubagentStatusTool,
+    )
 
     context = ToolContext(
         workspace=Workspace(Path(workspace)),
@@ -99,6 +112,13 @@ def build_default_registry(
             MemoryWriteTool(memory_store),
             MemoryDeleteTool(memory_store),
             DelegateReadonlyTool(subagent_runner),
+            SubagentSpawnTool(writable_subagents),
+            SubagentStatusTool(writable_subagents),
+            SubagentListTool(writable_subagents),
+            SubagentCancelTool(writable_subagents),
+            SubagentDiffTool(writable_subagents),
+            SubagentIntegrateTool(writable_subagents),
+            MessageBusEventsTool(message_bus),
             BackgroundStartTool(background_manager),
             BackgroundStatusTool(background_manager),
             BackgroundOutputTool(background_manager),
